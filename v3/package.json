@@ -1,0 +1,59 @@
+{
+  "name": "jae-vis-v4",
+  "version": "4.0.1",
+  "description": "JAE-VIS v4 PRO — JARVIS Windows AI Assistant",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "start:local": ".\\node_modules\\.bin\\electron .",
+    "build": "electron-builder"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.106.2",
+    "electron-store": "^8.2.0",
+    "ws": "^8.21.0"
+  },
+  "devDependencies": {
+    "electron": "^30.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.jae.vis.v4",
+    "productName": "JAE-VIS v4",
+    "copyright": "Copyright 2026 JAE-VIS",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": false,
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "JAE-VIS v4"
+    }
+  }
+}

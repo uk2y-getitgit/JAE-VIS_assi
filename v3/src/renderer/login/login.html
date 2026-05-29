@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'">
+  <title>JAE-VIS v2 — Login</title>
+  <link rel="stylesheet" href="login.css">
+</head>
+<body>
+  <div class="login-card">
+    <button class="win-close" id="btnClose" title="닫기">✕</button>
+
+    <!-- 로고 -->
+    <div class="logo-area">
+      <div class="logo-orb">🤖</div>
+      <div class="logo-title">JAE-VIS</div>
+      <div class="logo-sub">PROJECT MANAGEMENT SYSTEM v2.0</div>
+    </div>
+
+    <!-- 탭 -->
+    <div class="login-tabs">
+      <button class="tab-btn active" data-tab="login">로그인</button>
+      <button class="tab-btn"        data-tab="register">신규 등록</button>
+    </div>
+
+    <!-- 로그인 탭 -->
+    <div class="tab-content active" id="tab-login">
+      <div class="user-list" id="userList">
+        <!-- JS로 렌더링 -->
+      </div>
+      <div id="pinSection" style="display:none">
+        <div class="input-group">
+          <label>PIN (4자리)</label>
+          <input type="password" id="loginPin" maxlength="4" placeholder="••••" inputmode="numeric">
+        </div>
+        <label class="auto-login-label">
+          <input type="checkbox" id="chkAutoLogin">
+          <span>다음 실행 시 자동 로그인</span>
+        </label>
+      </div>
+      <div class="error-msg" id="loginError"></div>
+      <button class="btn-primary" id="btnLogin">LOGIN</button>
+    </div>
+
+    <!-- 신규 등록 탭 -->
+    <div class="tab-content" id="tab-register">
+      <div class="input-group">
+        <label>이름</label>
+        <input type="text" id="regName" placeholder="사용자 이름 입력">
+      </div>
+      <div class="input-group">
+        <label>PIN (4자리 숫자)</label>
+        <input type="password" id="regPin" maxlength="4" placeholder="••••" inputmode="numeric">
+      </div>
+      <div class="input-group">
+        <label>PIN 확인</label>
+        <input type="password" id="regPinConfirm" maxlength="4" placeholder="••••" inputmode="numeric">
+      </div>
+      <div class="error-msg" id="regError"></div>
+      <button class="btn-primary" id="btnRegister">CREATE USER</button>
+    </div>
+  </div>
+
+  <script src="login.js"></script>
+</body>
+</html>

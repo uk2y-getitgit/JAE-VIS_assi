@@ -1,0 +1,13 @@
+node_modules/
+.env
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+
+# dist — win-unpacked, yaml, zip 제외 / .exe 인스톨러는 포함
+dist/win-unpacked/
+dist/*.yaml
+dist/*.yml
+dist/*.zip
+dist/builder-debug.yml

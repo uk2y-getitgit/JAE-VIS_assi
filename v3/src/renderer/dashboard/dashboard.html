@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'">
+  <title>JAE-VIS v4 PRO</title>
+  <link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+
+<!-- ── 타이틀바 ──────────────────────────────────────────── -->
+<div id="titlebar">
+  <span class="tb-logo">JAE-VIS</span>
+  <span class="tb-version">v4.0 PRO</span>
+  <div class="tb-spacer"></div>
+  <span id="tbUser"></span>
+  <!-- Phase C: 알림 벨 -->
+  <div class="notif-bell-wrap" id="notifBellWrap">
+    <button class="tb-btn" id="btnNotifBell" title="알림">🔔</button>
+    <span class="notif-badge" id="notifBadge" style="display:none">0</span>
+  </div>
+  <button class="tb-btn" id="btnThemeToggle" title="테마 전환">☀️</button>
+  <button class="tb-btn" id="btnMinimize" title="최소화">─</button>
+  <button class="tb-btn" id="btnMaximize" title="최대화">▢</button>
+  <button class="tb-btn close" id="btnClose" title="트레이로 최소화">✕</button>
+</div>
+
+<!-- ── 앱 본체 ────────────────────────────────────────────── -->
+<div id="app">
+
+  <!-- 사이드바 -->
+  <aside id="sidebar">
+    <div class="sidebar-logo">
+      <div class="sidebar-logo-icon">🤖</div>
+      <div class="sidebar-title">JAE-VIS</div>
+      <div class="sidebar-sub">PROJECT MANAGER</div>
+    </div>
+
+    <nav>
+      <div class="nav-section">메인</div>
+      <div class="nav-item active" data-page="dashboard">
+        <span class="nav-icon">📊</span> 전체 현황
+      </div>
+      <div class="nav-item" data-page="briefing">
+        <span class="nav-icon">📋</span> 이번주 브리핑
+      </div>
+      <div class="nav-item" data-page="schedule">
+        <span class="nav-icon">📅</span> 3주 스케줄
+      </div>
+      <div class="nav-item" data-page="memo">
+        <span class="nav-icon">📌</span> 기타작업
+      </div>
+      <div class="nav-item" data-page="completed">
+        <span class="nav-icon">✅</span> 완료업무
+      </div>
+      <div class="nav-item" data-page="history">
+        <span class="nav-icon">📜</span> 변경 이력
+      </div>
+      <div class="nav-section">관리</div>
+      <div class="nav-item" data-page="trash">
+        <span class="nav-icon">🗑️</span> 휴지통
+      </div>
+      <div class="nav-item" data-page="settings">
+        <span class="nav-icon">⚙️</span> 설정
+      </div>
+    </nav>
+
+    <div class="sidebar-footer">
+      <!-- 글로벌 프로젝트 검색 -->
+      <div class="sidebar-search-wrap">
+        <div class="sidebar-search-box">
+          <span class="sidebar-search-icon">🔍</span>
+          <input type="text" id="globalSearchInput" placeholder="프로젝트 빠른 검색..." autocomplete="off">
+        </div>
+        <div id="globalSearchResults" class="global-search-results" style="display:none"></div>
+      </div>
+      <div class="sidebar-user">접속자: <span id="sidebarUser">-</span></div>
+      <button class="btn-logout" id="btnLogout">로그아웃</button>
+    </div>
+  </aside>
+
+  <!-- 콘텐츠 영역 -->
+  <main id="content">
+
+    <!-- ── PAGE: 전체 현황 대시보드 ────────────────────── -->
+    <section class="page active" id="page-dashboard">
+      <!-- 통계 배지 -->
+      <div class="stats-row">
+        <div class="stat-card">
+          <div class="stat-num" id="stat-total">0</div>
+          <div class="stat-label">전체 프로젝트</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num" style="color:var(--status-active)" id="stat-active">0</div>
+          <div class="stat-label">진행 중</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num" style="color:var(--status-billing)" id="stat-billing">0</div>
+          <div class="stat-label">청구 완료</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num" style="color:var(--status-done)" id="stat-done">0</div>
+          <div class="stat-label">완료</div>
+        </div>
+      </div>
+
+      <!-- 툴바 -->
+      <div class="page-header">
+        <div class="search-box">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="searchInput" placeholder="프로젝트명 검색...">
+        </div>
+        <select class="filter-select" id="filterStatus">
+          <option value="">전체 상태</option>
+          <option value="대기">대기</option>
+          <option value="진행중">진행 중</option>
+          <option value="청구완료">청구 완료</option>
+          <option value="완료">완료</option>
+        </select>
+        <select class="filter-select" id="filterCategory">
+          <option value="">전체 분류</option>
+          <!-- JS로 렌더링 -->
+        </select>
+        <div class="view-toggle">
+          <button class="view-btn active" data-view="card">▦ 카드</button>
+          <button class="view-btn" data-view="list">☰ 리스트</button>
+        </div>
+        <div class="header-spacer"></div>
+        <button class="btn-primary" id="btnNewProject">+ 새 프로젝트</button>
+      </div>
+
+      <!-- 프로젝트 목록 -->
+      <div id="project-area">
+        <div id="project-container" class="card-grid"></div>
+      </div>
+    </section>
+
+    <!-- ── PAGE: 3주 스케줄 ────────────────────────────── -->
+    <section class="page" id="page-schedule">
+      <div class="schedule-header">
+        <div class="page-title">3주 스케줄</div>
+        <div class="week-nav">
+          <button id="btnPrevWeek">◀</button>
+          <span id="weekLabel">-</span>
+          <button id="btnNextWeek">▶</button>
+        </div>
+        <div class="schedule-legend">
+          <div class="legend-item"><div class="legend-plan"></div> 계획</div>
+          <div class="legend-item"><div class="legend-actual"></div> 실시</div>
+          <div class="legend-item"><div class="legend-done-sched"></div> 완료</div>
+        </div>
+        <div class="header-spacer"></div>
+        <!-- 스케줄 내 프로젝트 검색 -->
+        <div class="sched-search-wrap">
+          <span class="sched-search-icon">🔍</span>
+          <input type="text" id="schedSearchInput" placeholder="프로젝트 검색...">
+          <button class="sched-search-clear" id="btnSchedSearchClear" style="display:none">✕</button>
+        </div>
+        <button class="btn-secondary" id="btnGoToday">오늘로 이동</button>
+        <button class="btn-secondary" id="btnOpenReport" style="font-size:12px;padding:6px 12px">📊 리포트</button>
+      </div>
+      <div class="schedule-body">
+        <div id="scheduleContent"></div>
+      </div>
+    </section>
+
+    <!-- ── PAGE: 메모 / 단기 작업 ──────────────────────── -->
+    <section class="page" id="page-memo">
+
+      <!-- 작업 입력 패널 -->
+      <div class="task-input-panel">
+        <div class="task-input-label">새 단기 작업 등록</div>
+        <div class="task-input-row1">
+          <textarea class="task-title-input" id="taskTitleInput" rows="2"
+                 placeholder="작업 내용 입력... (Enter: 줄바꿈 / Ctrl+Enter: 등록)"></textarea>
+          <select class="task-type-select" id="taskTypeSelect">
+            <option value="메일송부">📧 메일송부</option>
+            <option value="자료검토">📋 자료검토</option>
+            <option value="자료요청">📤 자료요청</option>
+            <option value="보고서작성">📄 보고서작성</option>
+            <option value="회의준비">🗓 회의준비</option>
+            <option value="전화/협의">📞 전화/협의</option>
+            <option value="서명/결재">✍ 서명/결재</option>
+            <option value="기타">📌 기타</option>
+          </select>
+        </div>
+        <div class="task-input-row2">
+          <div class="priority-group">
+            <span class="priority-label">우선순위</span>
+            <button class="priority-btn" data-p="긴급">🔴 긴급</button>
+            <button class="priority-btn active" data-p="보통">🟡 보통</button>
+            <button class="priority-btn" data-p="낮음">🟢 낮음</button>
+          </div>
+          <input type="date" class="task-due-input" id="taskDueDate" title="처리 목표일 (선택)">
+          <button class="btn-primary" id="btnAddTask">+ 등록</button>
+        </div>
+      </div>
+
+      <!-- 탭 바 -->
+      <div class="task-tabs">
+        <button class="task-tab active" data-tab="active">
+          미완료 <span class="task-count" id="activeTaskCount">0</span>
+        </button>
+        <button class="task-tab" data-tab="done">완료 이력</button>
+      </div>
+
+      <!-- 미완료 패널 -->
+      <div class="task-panel" id="panel-active">
+        <div id="taskActiveList" class="task-list"></div>
+      </div>
+
+      <!-- 완료 이력 패널 -->
+      <div class="task-panel" id="panel-done" style="display:none">
+        <div class="done-filter-row">
+          <div class="period-btns">
+            <button class="period-btn active" data-period="daily">일간</button>
+            <button class="period-btn" data-period="weekly">주간</button>
+            <button class="period-btn" data-period="monthly">월간</button>
+          </div>
+          <span class="done-stats-text" id="doneStatsText"></span>
+        </div>
+        <div id="taskDoneList" class="task-list"></div>
+      </div>
+
+    </section>
+
+    <!-- ── PAGE: 완료업무 ────────────────────────────── -->
+    <section class="page" id="page-completed">
+      <div class="page-header">
+        <div class="page-title">완료업무</div>
+        <span class="page-subtitle" id="completedCount"></span>
+        <div class="search-box" style="min-width:220px">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="completedSearch" placeholder="프로젝트명 · 공정명 검색...">
+        </div>
+        <input type="date" class="filter-input" id="completedDateFrom" title="완료일 시작" style="width:140px">
+        <span style="color:var(--text-muted);font-size:13px">~</span>
+        <input type="date" class="filter-input" id="completedDateTo" title="완료일 종료" style="width:140px">
+        <div class="quick-date-btns">
+          <button class="quick-date-btn" id="btnWeekRange">이번주</button>
+          <button class="quick-date-btn" id="btnMonthRange">이번달</button>
+        </div>
+        <button class="btn-secondary" id="btnClearCompleted" style="font-size:12px;padding:6px 10px">전체</button>
+      </div>
+      <div class="completed-area" id="completedArea"></div>
+    </section>
+
+    <!-- ── PAGE: 이번주 브리핑 ──────────────────────────── -->
+    <section class="page" id="page-briefing">
+      <div class="page-header">
+        <div class="page-title">이번주 브리핑</div>
+        <span class="page-subtitle" id="briefingWeekLabel">-</span>
+        <div class="header-spacer"></div>
+        <button class="btn-secondary" id="btnRefreshBriefing" style="font-size:12px;padding:6px 12px">새로고침</button>
+      </div>
+      <div class="briefing-body" id="briefingBody"></div>
+    </section>
+
+    <!-- ── PAGE: 변경 이력 (Phase D) ─────────────────────── -->
+    <section class="page" id="page-history">
+      <div class="page-header">
+        <div class="page-title">변경 이력</div>
+        <div class="search-box" style="min-width:200px">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="historySearch" placeholder="프로젝트명 · 공정명 검색...">
+        </div>
+        <select class="filter-input" id="historyFilter" style="width:130px">
+          <option value="">전체 유형</option>
+          <option value="create">등록</option>
+          <option value="status_change">상태변경</option>
+          <option value="date_change">날짜변경</option>
+          <option value="update">수정</option>
+          <option value="delete">삭제</option>
+          <option value="restore">복구</option>
+        </select>
+        <button class="btn-secondary" id="btnRefreshHistory" style="font-size:12px;padding:6px 10px">새로고침</button>
+      </div>
+      <div class="history-body" id="historyBody"></div>
+    </section>
+
+    <!-- ── PAGE: 휴지통 (삭제된 프로젝트) ───────────────── -->
+    <section class="page" id="page-trash">
+      <div class="page-header">
+        <div class="page-title">휴지통</div>
+        <div class="page-subtitle" style="color:var(--text-muted);font-size:12px">삭제된 프로젝트는 여기서 복구할 수 있습니다</div>
+      </div>
+      <div id="project-area" style="padding:20px 24px;overflow-y:auto;flex:1">
+        <div id="trash-container" class="project-list"></div>
+      </div>
+    </section>
+
+    <!-- ── PAGE: 설정 ────────────────────────────────────── -->
+    <section class="page" id="page-settings">
+      <div class="page-header">
+        <div class="page-title">설정</div>
+      </div>
+      <div class="settings-content">
+        <!-- 왼쪽: 앱 설정 -->
+        <div class="settings-col">
+          <div class="settings-card">
+            <div class="settings-card-title">앱 설정</div>
+
+            <div class="setting-row">
+              <div>
+                <div class="setting-label">일정 브리핑 시간</div>
+                <!-- [사용자 설정] 매일 이 시간에 오늘의 일정을 말풍선으로 알림 -->
+                <div class="setting-desc">매일 이 시간에 오늘 일정 알림</div>
+              </div>
+              <input type="time" class="setting-input" id="set-briefingTime" value="09:00">
+            </div>
+
+            <div class="setting-row">
+              <div>
+                <div class="setting-label">마감 알림 기준일</div>
+                <!-- [사용자 설정] 마감 N일 전 알림 발생 (기본 7일) -->
+                <div class="setting-desc">마감 N일 전 알림</div>
+              </div>
+              <input type="number" class="setting-input" id="set-alarmDays" value="7" min="1" max="30" style="width:80px">
+            </div>
+
+            <div class="setting-row">
+              <div>
+                <div class="setting-label">기본 뷰</div>
+                <!-- [사용자 설정] 전체 현황 기본 표시 형태 -->
+              </div>
+              <select class="setting-input" id="set-defaultView" style="width:120px;text-align:left">
+                <option value="card">카드뷰</option>
+                <option value="list">리스트뷰</option>
+              </select>
+            </div>
+
+            <div class="setting-row">
+              <div>
+                <div class="setting-label">윈도우 시작 시 자동실행</div>
+                <div class="setting-desc">Windows 시작 시 앱 자동 실행</div>
+              </div>
+              <label class="toggle-sw">
+                <input type="checkbox" id="set-autoStart">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+
+            <div class="setting-row">
+              <div>
+                <div class="setting-label">자동로그인</div>
+                <div class="setting-desc" id="autoLoginDesc">사용 안 함</div>
+              </div>
+              <button class="btn-secondary" id="btnClearAutoLogin" style="font-size:12px;padding:5px 10px;display:none">해제</button>
+            </div>
+
+            <div class="setting-row">
+              <div>
+                <div class="setting-label">화면 테마</div>
+                <div class="setting-desc">다크 / 라이트 모드 선택</div>
+              </div>
+              <div class="theme-toggle-btns">
+                <button class="theme-btn" id="btnThemeDark" data-theme="dark">🌙 다크</button>
+                <button class="theme-btn" id="btnThemeLight" data-theme="light">☀️ 라이트</button>
+              </div>
+            </div>
+            <div style="text-align:right;margin-top:16px">
+              <button class="btn-primary" id="btnSaveSettings">설정 저장</button>
+            </div>
+          </div>
+
+          <!-- [TODO] 단축키 설정 — 추후 구현 -->
+          <div class="settings-card">
+            <div class="settings-card-title">단축키 설정</div>
+            <div class="setting-row">
+              <div class="setting-label">전체 현황 열기</div>
+              <span style="color:var(--cyan);font-size:12px;font-family:monospace">Ctrl + Shift + M</span>
+            </div>
+            <div class="setting-row">
+              <div class="setting-label">빠른 메모</div>
+              <span style="color:var(--cyan);font-size:12px;font-family:monospace">Ctrl + Shift + N</span>
+            </div>
+            <div class="setting-row">
+              <div class="setting-label">오늘 일정 요약</div>
+              <span style="color:var(--cyan);font-size:12px;font-family:monospace">Ctrl + Shift + S</span>
+            </div>
+            <div style="margin-top:12px;font-size:11px;color:var(--text-muted)">
+              <!-- [TODO] 단축키 사용자 변경 기능 — 추후 구현 예정 -->
+              ※ 단축키 변경 기능은 정식 버전에서 지원 예정
+            </div>
+          </div>
+
+          <!-- AI 비서 설정 카드 -->
+          <div class="settings-card ai-settings-card">
+            <div class="settings-card-title" style="display:flex;align-items:center;gap:8px">
+              <span style="color:var(--cyan)">🤖</span> AI 비서 설정
+            </div>
+
+            <div class="setting-row">
+              <div>
+                <div class="setting-label">AI 위젯 사용</div>
+                <div class="setting-desc">바탕화면 JAE-VIS AI 위젯 표시</div>
+              </div>
+              <label class="toggle-sw">
+                <input type="checkbox" id="set-aiWidgetEnabled" checked>
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+
+            <div class="setting-row">
+              <div>
+                <div class="setting-label">AI 제공자</div>
+                <div class="setting-desc">API 호출에 사용할 AI 서비스</div>
+              </div>
+              <select class="setting-input" id="set-aiProvider" style="width:120px;text-align:left">
+                <option value="claude">Claude (Anthropic)</option>
+                <option value="gemini">Gemini (Google)</option>
+              </select>
+            </div>
+
+            <div class="setting-row ai-apikey-row" style="flex-direction:column;align-items:flex-start;gap:8px">
+              <div class="setting-label">API 키</div>
+              <div style="width:100%;display:flex;gap:8px">
+                <input type="password" class="setting-input" id="set-aiApiKey"
+                  placeholder="API 키를 입력하세요..." style="flex:1;font-size:12px;letter-spacing:2px">
+                <button class="btn-secondary" id="btnToggleApiKeyVis" style="font-size:11px;padding:5px 10px;white-space:nowrap">👁 보기</button>
+              </div>
+              <div id="aiKeyStatus" style="font-size:11px;color:var(--text-muted)">
+                <!-- 저장 상태 표시 -->
+              </div>
+            </div>
+
+            <div style="text-align:right;margin-top:16px;display:flex;align-items:center;justify-content:space-between">
+              <div style="font-size:11px;color:var(--text-muted)">
+                ※ API 키는 이 기기에만 저장됩니다
+              </div>
+              <button class="btn-primary" id="btnSaveAiSettings">AI 설정 저장</button>
+            </div>
+          </div>
+          <!-- Cloud Sync 설정 카드 -->
+          <div class="settings-card cloud-sync-card">
+            <div class="settings-card-title" style="display:flex;align-items:center;gap:8px">
+              <span style="color:var(--cyan)">☁</span> Cloud Sync (Supabase)
+              <span class="cloud-status-badge" id="cloudStatusBadge">미연결</span>
+            </div>
+
+            <!-- 연결 상태 표시줄 -->
+            <div class="cloud-status-bar" id="cloudStatusBar">
+              <span class="cloud-status-dot" id="cloudStatusDot"></span>
+              <span id="cloudStatusText">Supabase에 연결되어 있지 않습니다.</span>
+            </div>
+
+            <!-- 입력 폼 (미연결 상태에서만 표시) -->
+            <div id="cloudFormArea">
+              <div class="cloud-input-group">
+                <div class="cloud-input-label">Supabase URL</div>
+                <input type="text" class="setting-input" id="cloud-url"
+                  placeholder="https://xxxx.supabase.co" style="width:100%;font-size:12px">
+              </div>
+              <div class="cloud-input-group">
+                <div class="cloud-input-label">Anon Key</div>
+                <input type="password" class="setting-input" id="cloud-anon-key"
+                  placeholder="eyJ..." style="width:100%;font-size:12px">
+              </div>
+              <div class="cloud-input-group">
+                <div class="cloud-input-label">이메일</div>
+                <input type="email" class="setting-input" id="cloud-email"
+                  placeholder="your@email.com" style="width:100%;font-size:12px">
+              </div>
+              <div class="cloud-input-group">
+                <div class="cloud-input-label">비밀번호</div>
+                <input type="password" class="setting-input" id="cloud-password"
+                  placeholder="비밀번호 입력" style="width:100%;font-size:12px">
+              </div>
+              <div style="font-size:11px;color:var(--text-muted);margin:8px 0 12px">
+                ※ Supabase Dashboard → Settings → API 에서 URL · Anon Key 확인
+              </div>
+              <div style="display:flex;gap:8px">
+                <button class="btn-primary" id="btnCloudConnect" style="flex:1">로그인</button>
+                <button class="btn-secondary" id="btnCloudSignUp" style="flex:1">신규 가입</button>
+              </div>
+              <div id="cloudAuthStatus" style="font-size:11px;margin-top:8px;min-height:16px"></div>
+            </div>
+
+            <!-- 연결 완료 후 표시 영역 -->
+            <div id="cloudConnectedArea" style="display:none">
+              <div class="cloud-action-row">
+                <div>
+                  <div class="setting-label">데이터 동기화</div>
+                  <div class="setting-desc">현재 로컬 데이터를 클라우드에 업로드</div>
+                </div>
+                <button class="btn-primary" id="btnCloudMigrate" style="font-size:12px;padding:6px 14px;white-space:nowrap">
+                  데이터 업로드
+                </button>
+              </div>
+              <div id="cloudMigrateResult" style="font-size:11px;margin-top:6px;min-height:16px;color:var(--accent)"></div>
+
+              <!-- 클라우드 → 로컬 다운로드 -->
+              <div class="cloud-action-row" style="margin-top:12px">
+                <div>
+                  <div class="setting-label">클라우드에서 불러오기</div>
+                  <div class="setting-desc">다른 PC에서 업로드한 데이터를 이 PC로 가져옵니다</div>
+                </div>
+                <button class="btn-primary" id="btnCloudPull" style="font-size:12px;padding:6px 14px;white-space:nowrap;background:var(--accent)">
+                  데이터 가져오기
+                </button>
+              </div>
+              <div id="cloudPullResult" style="font-size:11px;margin-top:6px;min-height:16px;color:var(--accent)"></div>
+
+              <div class="cloud-action-row" style="margin-top:12px">
+                <div class="setting-desc">이후 모든 변경사항은 자동으로 동기화됩니다.</div>
+                <button class="btn-secondary" id="btnCloudDisconnect" style="font-size:11px;padding:5px 10px;color:var(--text-muted)">
+                  연결 해제
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 오른쪽: 분류 관리 -->
+        <div class="settings-col">
+          <div class="settings-card" style="flex:1">
+            <div class="settings-card-title" style="display:flex;align-items:center;justify-content:space-between">
+              분류 관리
+              <button class="btn-secondary" style="font-size:11px;padding:4px 10px" id="btnAddCat1">+ 대분류 추가</button>
+            </div>
+            <div class="cat-tree" id="catTree">
+              <!-- JS로 렌더링 -->
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- ── 프로젝트 상세 슬라이드 패널 ──────────────────────── -->
+<div class="modal-overlay" id="projectModal">
+  <div class="modal-panel">
+    <div class="modal-header">
+      <div>
+        <div class="modal-proj-name" id="modalProjName">-</div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:4px" id="modalProjCat">-</div>
+      </div>
+      <div id="modalStatusBadge" class="status-badge" style="font-size:12px">-</div>
+      <button class="btn-secondary" style="font-size:11px;padding:5px 10px" id="btnEditProject">편집</button>
+      <button class="modal-close" id="btnCloseModal">✕</button>
+    </div>
+
+    <div class="modal-tabs">
+      <button class="modal-tab active" data-tab="processes">⚙ 공정 관리</button>
+      <button class="modal-tab" data-tab="memos">📝 메모·이력</button>
+    </div>
+
+    <div class="modal-body">
+      <!-- 공정 관리 탭 -->
+      <div id="modal-tab-processes" class="modal-section">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <div class="section-title" style="margin:0">공정 단계</div>
+          <button class="btn-primary" style="font-size:10px;padding:6px 12px" id="btnAddProcess">+ 공정 추가</button>
+        </div>
+        <!-- 건진법 그룹 드릴인 네비게이션 -->
+        <div id="procGroupNav">
+          <button class="btn-secondary" style="font-size:11px;padding:5px 12px" id="btnBackToGroup">← 목록으로</button>
+          <span id="procGroupName"></span>
+        </div>
+        <div class="process-list" id="processList">
+          <!-- JS로 렌더링 -->
+        </div>
+      </div>
+
+      <!-- 메모·이력 탭 -->
+      <div id="modal-tab-memos" class="modal-section" style="display:none">
+        <div class="memo-input-area">
+          <div class="section-title">새 메모 작성</div>
+          <div class="memo-input-row">
+            <select class="memo-tag-select" id="memoTag">
+              <option value="">태그 없음</option>
+              <option value="중요">🔴 중요</option>
+              <option value="보완">🟡 보완</option>
+              <option value="확인필요">🔵 확인필요</option>
+            </select>
+          </div>
+          <textarea class="memo-textarea" id="memoContent" placeholder="메모 내용을 입력하세요... (Enter: 줄바꿈 / Ctrl+Enter: 저장)"></textarea>
+          <div class="memo-submit">
+            <button class="btn-primary" style="font-size:11px;padding:7px 16px" id="btnAddMemo">저장</button>
+          </div>
+        </div>
+        <div class="section-title">이력</div>
+        <div class="memo-list" id="memoList">
+          <!-- JS로 렌더링 -->
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── 프로젝트 등록/편집 다이얼로그 ─────────────────────── -->
+<div class="dialog-overlay" id="projectDialog">
+  <div class="dialog-box">
+    <div class="dialog-title" id="dialogTitle">새 프로젝트 등록</div>
+    <input type="hidden" id="dialogProjectId">
+
+    <div class="form-group">
+      <label class="form-label">프로젝트명 *</label>
+      <input type="text" class="form-input" id="dlgName" placeholder="프로젝트 이름 입력">
+    </div>
+    <div class="form-group">
+      <label class="form-label">대분류</label>
+      <select class="form-select" id="dlgCat1">
+        <option value="">선택하세요</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">중분류</label>
+      <select class="form-select" id="dlgCat2">
+        <option value="">선택하세요</option>
+      </select>
+    </div>
+    <div class="form-group" id="dlgProcItemGroup" style="display:none">
+      <label class="form-label" style="display:flex;align-items:center;justify-content:space-between;text-transform:none;letter-spacing:0">
+        <span style="font-size:11px;font-weight:600;color:var(--text-sec);text-transform:uppercase;letter-spacing:0.04em">공정 항목명</span>
+        <span style="font-size:10px;color:var(--text-muted);font-weight:400">Tab → 다음 항목 추가</span>
+      </label>
+      <div id="dlgProcItemList" class="proc-item-list"></div>
+      <button type="button" class="btn-add-proc-item" id="btnAddProcItem">＋ 항목 추가</button>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:8px;line-height:1.5">
+        ⚡ 각 항목마다 <strong>현장점검 · 보고서작성 · 제출 · 제본 · 청구</strong>가 자동 생성됩니다
+      </div>
+    </div>
+    <div id="dlgAutoProcessNotice" style="display:none;margin-bottom:12px">
+      <div style="background:var(--accent-light);border:1px solid var(--border-focus);border-radius:var(--radius);padding:10px 12px;font-size:12px;color:var(--accent)">
+        ⚡ 선택한 분류에 따라 공정이 자동 생성됩니다
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">설명</label>
+      <textarea class="form-textarea" id="dlgDesc" placeholder="프로젝트 설명 (선택 사항)"></textarea>
+    </div>
+
+    <div class="dialog-actions">
+      <button class="btn-secondary" id="btnDlgCancel">취소</button>
+      <button class="btn-primary" id="btnDlgSave">저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── 공정 추가 다이얼로그 ──────────────────────────────── -->
+<div class="dialog-overlay" id="processDialog">
+  <div class="dialog-box">
+    <div class="dialog-title">공정 단계 추가</div>
+    <input type="hidden" id="dlgProcProjectId">
+    <div class="form-group">
+      <label class="form-label">공정명 *</label>
+      <input type="text" class="form-input" id="dlgProcName" placeholder="예: 현장 점검, 보고서 작성...">
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="form-group">
+        <label class="form-label">계획 시작일</label>
+        <input type="date" class="form-input" id="dlgPlanStart">
+      </div>
+      <div class="form-group">
+        <label class="form-label">계획 종료일</label>
+        <input type="date" class="form-input" id="dlgPlanEnd">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">실시 구분</label>
+      <div class="date-type-toggle">
+        <button type="button" class="date-type-btn active" id="btnDateShort">단기 (하루)</button>
+        <button type="button" class="date-type-btn" id="btnDateLong">장기 (기간)</button>
+      </div>
+    </div>
+    <div class="form-group" id="dlgActualShort">
+      <label class="form-label">실시일</label>
+      <input type="date" class="form-input" id="dlgActualDate">
+    </div>
+    <div id="dlgActualLong" style="display:none">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group">
+          <label class="form-label">실시 시작일</label>
+          <input type="date" class="form-input" id="dlgActualStart">
+        </div>
+        <div class="form-group">
+          <label class="form-label">실시 종료일</label>
+          <input type="date" class="form-input" id="dlgActualEnd">
+        </div>
+      </div>
+    </div>
+    <div class="dialog-actions">
+      <button class="btn-secondary" id="btnProcDlgCancel">취소</button>
+      <button class="btn-primary" id="btnProcDlgSave">추가</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── 건진법 항목(그룹) 추가 다이얼로그 ─────────────────── -->
+<div class="dialog-overlay" id="gunjinGroupDialog">
+  <div class="dialog-box" style="min-width:380px">
+    <div class="dialog-title">항목 추가</div>
+    <div class="form-group">
+      <label class="form-label">항목명 *</label>
+      <input type="text" class="form-input" id="dlgGunjinGroupName" placeholder="예: 항타기2차, 옹벽공사...">
+      <div style="font-size:11px;color:var(--text-muted);margin-top:6px">
+        ⚡ 현장점검 · 보고서작성 · 제출 · 제본 · 청구가 자동 생성됩니다
+      </div>
+    </div>
+    <div class="dialog-actions">
+      <button class="btn-secondary" id="btnGunjinGroupCancel">취소</button>
+      <button class="btn-primary" id="btnGunjinGroupSave">추가</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── 분류 추가 다이얼로그 ──────────────────────────────── -->
+<div class="dialog-overlay" id="catDialog">
+  <div class="dialog-box" style="min-width:360px">
+    <div class="dialog-title" id="catDialogTitle">분류 추가</div>
+    <input type="hidden" id="dlgCatParentId">
+    <input type="hidden" id="dlgCatLevel">
+    <div class="form-group">
+      <label class="form-label">분류명 *</label>
+      <input type="text" class="form-input" id="dlgCatName" placeholder="분류 이름 입력">
+    </div>
+    <div class="dialog-actions">
+      <button class="btn-secondary" id="btnCatDlgCancel">취소</button>
+      <button class="btn-primary" id="btnCatDlgSave">추가</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── 알림 드롭다운 패널 (Phase C) ─────────────────────── -->
+<div class="notif-dropdown" id="notifDropdown" style="display:none">
+  <div class="notif-dropdown-header">
+    <span class="notif-dropdown-title">🔔 알림</span>
+    <div style="display:flex;gap:6px">
+      <button class="btn-secondary" id="btnMarkAllRead" style="font-size:10px;padding:3px 8px">전체 읽음</button>
+      <button class="btn-secondary" id="btnClearNotifs" style="font-size:10px;padding:3px 8px;color:var(--text-muted)">비우기</button>
+    </div>
+  </div>
+  <div class="notif-list" id="notifList">
+    <div class="notif-empty">알림이 없습니다.</div>
+  </div>
+</div>
+<div class="notif-overlay" id="notifOverlay" style="display:none"></div>
+
+<!-- ── 리포트 모달 (Phase E) ────────────────────────────── -->
+<div class="report-modal" id="reportModal" style="display:none">
+  <div class="report-modal-inner">
+    <div class="report-modal-header">
+      <span class="report-modal-title">📊 주간 리포트</span>
+      <div style="display:flex;gap:8px">
+        <button class="btn-primary" id="btnPrintReport" style="font-size:12px;padding:6px 14px">🖨 인쇄 / PDF</button>
+        <button class="tb-btn close" id="btnCloseReport" style="position:static">✕</button>
+      </div>
+    </div>
+    <div class="report-body" id="reportBody"></div>
+  </div>
+</div>
+
+<script src="dashboard.js"></script>
+</body>
+</html>

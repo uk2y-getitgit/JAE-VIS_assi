@@ -1,0 +1,32 @@
+@import "tailwindcss";
+
+:root {
+  --bg-primary: #0a0e1a;
+  --bg-card: #111827;
+  --bg-card2: #1a2235;
+  --accent: #00CFFF;
+  --accent-dim: #0099cc;
+  --text-primary: #e5e7eb;
+  --text-muted: #9ca3af;
+  --border: #1e2d45;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  overscroll-behavior: none;
+}
+
+/* 하단 safe area 패딩 (iOS notch 대응) */
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* 스크롤바 숨김 */
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }

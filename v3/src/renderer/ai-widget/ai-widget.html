@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JAE-VIS AI</title>
+  <link rel="stylesheet" href="ai-widget.css">
+</head>
+<body>
+
+<!-- ── 접힌 상태: 캐릭터 위젯 ─────────────────────────────── -->
+<div id="collapsed-view" class="collapsed-view">
+  <div class="orb-wrapper" id="orbWrapper">
+    <div class="orb-glow"></div>
+    <div class="orb-ring ring1"></div>
+    <div class="orb-ring ring2"></div>
+    <div class="orb-core">
+      <div class="orb-icon">🤖</div>
+    </div>
+    <div class="notification-dot" id="notifDot" style="display:none"></div>
+  </div>
+  <div class="widget-label">JAE-VIS AI</div>
+</div>
+
+<!-- ── 펼친 상태: 채팅 패널 ────────────────────────────────── -->
+<div id="expanded-view" class="expanded-view" style="display:none">
+  <!-- 리사이즈 핸들 (8방향) -->
+  <div class="resize-handle rh-n"  data-dir="n"></div>
+  <div class="resize-handle rh-ne" data-dir="ne"></div>
+  <div class="resize-handle rh-e"  data-dir="e"></div>
+  <div class="resize-handle rh-se" data-dir="se"></div>
+  <div class="resize-handle rh-s"  data-dir="s"></div>
+  <div class="resize-handle rh-sw" data-dir="sw"></div>
+  <div class="resize-handle rh-w"  data-dir="w"></div>
+  <div class="resize-handle rh-nw" data-dir="nw"></div>
+
+  <div class="chat-header">
+    <div class="chat-header-left">
+      <div class="chat-orb-mini">🤖</div>
+      <div>
+        <div class="chat-title">JAE-VIS AI</div>
+        <div class="chat-status" id="chatStatus">준비됨</div>
+      </div>
+    </div>
+    <div class="chat-header-right">
+      <select class="style-select" id="styleSelect" title="답변 스타일">
+        <option value="concise">간결</option>
+        <option value="detailed">상세</option>
+        <option value="report">보고서</option>
+      </select>
+      <button class="btn-reset" id="btnReset" title="새 대화">↺</button>
+      <button class="btn-close" id="btnClose" title="닫기">✕</button>
+    </div>
+  </div>
+
+  <div class="chat-messages" id="chatMessages">
+    <!-- 메시지가 JS로 추가됨 -->
+  </div>
+
+  <div class="quick-btns">
+    <button class="quick-btn" data-prompt="이번주 공정 일정 브리핑 해줘">📅 이번주 브리핑</button>
+    <button class="quick-btn" data-prompt="지연 중인 공정 목록 알려줘">⚠️ 지연 공정</button>
+    <button class="quick-btn" data-prompt="미완료 단기 작업 목록 알려줘">📌 단기 작업</button>
+    <button class="quick-btn" data-prompt="진행 중인 프로젝트 전체 현황 요약해줘">📊 전체 현황</button>
+  </div>
+
+  <div class="chat-input-area">
+    <textarea class="chat-input" id="chatInput"
+      placeholder="예: 흙막이 1차 완료 처리해줘 / 다음주 점검 일정 등록해줘"
+      rows="1"></textarea>
+    <button class="btn-send" id="btnSend">↑</button>
+  </div>
+</div>
+
+<script src="ai-widget.js"></script>
+</body>
+</html>

@@ -1,0 +1,39 @@
+# ── 공통 ─────────────────────────────────────────────
+node_modules/
+.DS_Store
+*.log
+.env
+.env.local
+.env*.local
+
+# ── Electron 앱 데이터 (로컬 런타임) ─────────────────
+data/
+logs/
+config/
+
+# ── v3 (desktop) 빌드 산출물 ─────────────────────────
+v3/dist/
+v3/node_modules/
+
+# ── 모바일 빌드 산출물 ────────────────────────────────
+mobile/.next/
+mobile/out/
+mobile/.vercel/
+mobile/node_modules/
+
+# ── 민감 정보 ─────────────────────────────────────────
+API Test.txt
+claude API.txt
+Gemini API.txt
+**/API Test.txt
+**/claude API.txt
+**/Gemini API.txt
+
+# ── Claude / Serena 설정 ──────────────────────────────
+.claude/
+.serena/
+v3/.serena/
+
+# ── 임시 파일 ─────────────────────────────────────────
+seed-data.js
+push_repo/
