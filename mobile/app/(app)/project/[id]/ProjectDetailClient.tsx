@@ -57,7 +57,7 @@ export default function ProjectDetailClient({ project, initialProcesses, initial
       )
       .on(
         'postgres_changes',
-        { event: 'DELETE', schema: 'public', table: 'memos', filter: `project_id=eq.${project.id}` },
+        { event: 'DELETE', schema: 'public', table: 'memos' },
         (payload) => {
           setMemos((prev) => prev.filter((m) => m.id !== (payload.old as { id: string }).id));
         }
@@ -113,7 +113,7 @@ export default function ProjectDetailClient({ project, initialProcesses, initial
       .single();
     setMemoLoading(false);
     if (!error && data) {
-      setMemos((prev) => [data as Memo, ...prev]);
+      setMemos((prev) => prev.some((m) => m.id === (data as Memo).id) ? prev : [data as Memo, ...prev]);
       setMemoContent('');
       setMemoTag(null);
     }
@@ -126,9 +126,9 @@ export default function ProjectDetailClient({ project, initialProcesses, initial
   }
 
   // 공정 트리 (is_group 상위 먼저, 자식은 들여쓰기)
-  const rootProcs = processes.filter((p) => !p.parent_id);
+  const rootProcs = processes.filter((p) => !p.parent_id && !p.is_deleted);
   const childMap = new Map<string, Process[]>();
-  processes.filter((p) => p.parent_id).forEach((p) => {
+  processes.filter((p) => p.parent_id && !p.is_deleted).forEach((p) => {
     if (!childMap.has(p.parent_id!)) childMap.set(p.parent_id!, []);
     childMap.get(p.parent_id!)!.push(p);
   });

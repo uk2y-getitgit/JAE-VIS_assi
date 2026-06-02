@@ -58,7 +58,7 @@ export default function TasksClient({ initialTasks, userId }: Props) {
       )
       .on(
         'postgres_changes',
-        { event: 'DELETE', schema: 'public', table: 'quick_memos', filter: `user_id=eq.${userId}` },
+        { event: 'DELETE', schema: 'public', table: 'quick_memos' },
         (payload) => {
           setTasks((prev) => prev.filter((t) => t.id !== (payload.old as { id: string }).id));
         }
@@ -92,7 +92,7 @@ export default function TasksClient({ initialTasks, userId }: Props) {
       .single();
     setLoading(false);
     if (!error && data) {
-      setTasks((prev) => [data as QuickMemo, ...prev]);
+      setTasks((prev) => prev.some((t) => t.id === (data as QuickMemo).id) ? prev : [data as QuickMemo, ...prev]);
       setContent('');
       setDueDate('');
       setType('기타');
