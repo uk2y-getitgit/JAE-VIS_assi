@@ -98,6 +98,7 @@ export default function TasksClient({ initialTasks, userId }: Props) {
       const { data, error } = await supabase
         .from('quick_memos')
         .insert({
+          id: crypto.randomUUID(),
           user_id: userId,
           username: userEmail,
           content: content.trim(),

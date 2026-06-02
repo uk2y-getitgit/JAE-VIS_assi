@@ -114,6 +114,7 @@ export default function ProjectDetailClient({ project, initialProcesses, initial
       const { data, error } = await supabase
         .from('memos')
         .insert({
+          id: crypto.randomUUID(),
           project_id: project.id,
           content: memoContent.trim(),
           tag: memoTag,
