@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import type { QuickMemo, TaskType, TaskPriority } from '@/lib/types';
 import { createClient } from '@/lib/supabase';
 
@@ -22,6 +23,7 @@ interface Props {
 
 export default function TasksClient({ initialTasks, userId }: Props) {
   const supabase = createClient();
+  const router = useRouter();
   const [tasks, setTasks] = useState<QuickMemo[]>(initialTasks);
   const [content, setContent] = useState('');
   const [type, setType] = useState<TaskType>('기타');
@@ -29,6 +31,7 @@ export default function TasksClient({ initialTasks, userId }: Props) {
   const [dueDate, setDueDate] = useState('');
   const [loading, setLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
 
   // PC와 실시간 동기화
   useEffect(() => {
@@ -72,32 +75,46 @@ export default function TasksClient({ initialTasks, userId }: Props) {
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
     if (!content.trim()) return;
+    setAddError(null);
     setLoading(true);
-    const { data: user } = await supabase.auth.getUser();
-    const now = new Date().toISOString();
-    const { data, error } = await supabase
-      .from('quick_memos')
-      .insert({
-        user_id: userId,
-        username: user.user?.email ?? '',
-        content: content.trim(),
-        type,
-        priority,
-        due_date: dueDate || null,
-        is_done: false,
-        created_at: now,
-        updated_at: now,
-      })
-      .select()
-      .single();
-    setLoading(false);
-    if (!error && data) {
-      setTasks((prev) => prev.some((t) => t.id === (data as QuickMemo).id) ? prev : [data as QuickMemo, ...prev]);
-      setContent('');
-      setDueDate('');
-      setType('기타');
-      setPriority('보통');
-      setShowForm(false);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        router.push('/login');
+        return;
+      }
+      const now = new Date().toISOString();
+      const { data, error } = await supabase
+        .from('quick_memos')
+        .insert({
+          user_id: userId,
+          username: user.email ?? '',
+          content: content.trim(),
+          type,
+          priority,
+          due_date: dueDate || null,
+          is_done: false,
+          created_at: now,
+          updated_at: now,
+        })
+        .select()
+        .single();
+      if (error) {
+        setAddError(error.message);
+        return;
+      }
+      if (data) {
+        setTasks((prev) => prev.some((t) => t.id === (data as QuickMemo).id) ? prev : [data as QuickMemo, ...prev]);
+        setContent('');
+        setDueDate('');
+        setType('기타');
+        setPriority('보통');
+        setShowForm(false);
+      }
+    } catch {
+      setAddError('네트워크 오류가 발생했습니다. 다시 시도해주세요.');
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -124,7 +141,7 @@ export default function TasksClient({ initialTasks, userId }: Props) {
           <p className="text-xs text-gray-500 mt-0.5">미완료 {tasks.length}건</p>
         </div>
         <button
-          onClick={() => setShowForm((v) => !v)}
+          onClick={() => { setShowForm((v) => !v); setAddError(null); }}
           className="bg-[#00CFFF] text-[#0a0e1a] text-xs font-bold px-3 py-1.5 rounded-lg"
         >
           {showForm ? '닫기' : '+ 등록'}
@@ -177,12 +194,15 @@ export default function TasksClient({ initialTasks, userId }: Props) {
               className="ml-auto bg-[#1a2235] text-xs text-gray-300 rounded-lg px-2 py-1 border border-[#2a3a55] focus:outline-none"
             />
           </div>
+          {addError && (
+            <p className="text-xs text-red-400 bg-red-900/20 rounded-lg px-3 py-2">{addError}</p>
+          )}
           <button
             type="submit"
             disabled={loading || !content.trim()}
             className="w-full bg-[#00CFFF] text-[#0a0e1a] text-sm font-bold py-2 rounded-xl disabled:opacity-40"
           >
-            등록
+            {loading ? '등록 중...' : '등록'}
           </button>
         </form>
       )}

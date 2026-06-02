@@ -94,28 +94,43 @@ export default function ProjectDetailClient({ project, initialProcesses, initial
   const [memoContent, setMemoContent] = useState('');
   const [memoTag, setMemoTag] = useState<MemoTag>(null);
   const [memoLoading, setMemoLoading] = useState(false);
+  const [memoError, setMemoError] = useState<string | null>(null);
 
   async function handleAddMemo(e: React.FormEvent) {
     e.preventDefault();
     if (!memoContent.trim()) return;
+    setMemoError(null);
     setMemoLoading(true);
-    const { data: user } = await supabase.auth.getUser();
-    const { data, error } = await supabase
-      .from('memos')
-      .insert({
-        project_id: project.id,
-        content: memoContent.trim(),
-        tag: memoTag,
-        author: user.user?.email ?? '',
-        is_pinned: false,
-      })
-      .select()
-      .single();
-    setMemoLoading(false);
-    if (!error && data) {
-      setMemos((prev) => prev.some((m) => m.id === (data as Memo).id) ? prev : [data as Memo, ...prev]);
-      setMemoContent('');
-      setMemoTag(null);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        router.push('/login');
+        return;
+      }
+      const { data, error } = await supabase
+        .from('memos')
+        .insert({
+          project_id: project.id,
+          content: memoContent.trim(),
+          tag: memoTag,
+          author: user.email ?? '',
+          is_pinned: false,
+        })
+        .select()
+        .single();
+      if (error) {
+        setMemoError(error.message);
+        return;
+      }
+      if (data) {
+        setMemos((prev) => prev.some((m) => m.id === (data as Memo).id) ? prev : [data as Memo, ...prev]);
+        setMemoContent('');
+        setMemoTag(null);
+      }
+    } catch {
+      setMemoError('네트워크 오류가 발생했습니다. 다시 시도해주세요.');
+    } finally {
+      setMemoLoading(false);
     }
   }
 
@@ -224,9 +239,12 @@ export default function ProjectDetailClient({ project, initialProcesses, initial
                 disabled={memoLoading || !memoContent.trim()}
                 className="shrink-0 bg-[#00CFFF] text-[#0a0e1a] text-xs font-bold px-3 py-1.5 rounded-lg disabled:opacity-40 ml-2"
               >
-                추가
+                {memoLoading ? '추가 중...' : '추가'}
               </button>
             </div>
+            {memoError && (
+              <p className="text-xs text-red-400 bg-red-900/20 rounded-lg px-3 py-2 mt-2">{memoError}</p>
+            )}
           </form>
 
           {/* 메모 목록 */}
