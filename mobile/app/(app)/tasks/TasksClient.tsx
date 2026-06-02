@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import type { QuickMemo, TaskType, TaskPriority } from '@/lib/types';
 import { createClient } from '@/lib/supabase';
@@ -22,9 +22,13 @@ interface Props {
 }
 
 export default function TasksClient({ initialTasks, userId }: Props) {
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const router = useRouter();
+
   const [tasks, setTasks] = useState<QuickMemo[]>(initialTasks);
+  const [userEmail, setUserEmail] = useState('');
+  const [authReady, setAuthReady] = useState(false);
+
   const [content, setContent] = useState('');
   const [type, setType] = useState<TaskType>('기타');
   const [priority, setPriority] = useState<TaskPriority>('보통');
@@ -33,8 +37,21 @@ export default function TasksClient({ initialTasks, userId }: Props) {
   const [showForm, setShowForm] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
 
+  // 마운트 시 세션 1회 확인 (네트워크 없이 로컬 캐시 읽기)
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session) {
+        router.push('/login');
+        return;
+      }
+      setUserEmail(session.user.email ?? '');
+      setAuthReady(true);
+    });
+  }, [supabase, router]);
+
   // PC와 실시간 동기화
   useEffect(() => {
+    if (!authReady) return;
     const channel = supabase
       .channel('tasks-realtime')
       .on(
@@ -69,8 +86,7 @@ export default function TasksClient({ initialTasks, userId }: Props) {
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId]);
+  }, [supabase, userId, authReady]);
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
@@ -78,17 +94,12 @@ export default function TasksClient({ initialTasks, userId }: Props) {
     setAddError(null);
     setLoading(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        router.push('/login');
-        return;
-      }
       const now = new Date().toISOString();
       const { data, error } = await supabase
         .from('quick_memos')
         .insert({
           user_id: userId,
-          username: user.email ?? '',
+          username: userEmail,
           content: content.trim(),
           type,
           priority,
@@ -148,8 +159,13 @@ export default function TasksClient({ initialTasks, userId }: Props) {
         </button>
       </div>
 
+      {/* 세션 로딩 중 */}
+      {!authReady && (
+        <p className="text-center text-gray-500 text-sm py-6">로딩 중...</p>
+      )}
+
       {/* 작업 입력 폼 */}
-      {showForm && (
+      {authReady && showForm && (
         <form onSubmit={handleAdd} className="mx-4 mt-4 bg-[#111827] rounded-2xl p-4 border border-[#1e2d45] space-y-3">
           <textarea
             value={content}
@@ -195,7 +211,7 @@ export default function TasksClient({ initialTasks, userId }: Props) {
             />
           </div>
           {addError && (
-            <p className="text-xs text-red-400 bg-red-900/20 rounded-lg px-3 py-2">{addError}</p>
+            <p className="text-xs text-red-400 bg-red-900/30 border border-red-800 rounded-lg px-3 py-2">{addError}</p>
           )}
           <button
             type="submit"
@@ -209,13 +225,12 @@ export default function TasksClient({ initialTasks, userId }: Props) {
 
       {/* 작업 목록 */}
       <div className="px-4 mt-4 space-y-2 pb-24">
-        {tasks.length === 0 && (
+        {authReady && tasks.length === 0 && (
           <p className="text-center text-gray-500 text-sm py-12">미완료 작업 없음</p>
         )}
         {tasks.map((task) => (
           <div key={task.id} className="bg-[#111827] rounded-xl p-3 border border-[#1e2d45]">
             <div className="flex items-start gap-3">
-              {/* 완료 버튼 */}
               <button
                 onClick={() => handleComplete(task.id)}
                 className="shrink-0 mt-0.5 w-5 h-5 rounded-full border-2 border-gray-600 hover:border-[#00CFFF] hover:bg-[#00CFFF]/20 transition flex items-center justify-center"

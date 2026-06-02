@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import type { Project, Process, ProcessStatus, Memo, MemoTag } from '@/lib/types';
 import { createClient } from '@/lib/supabase';
@@ -37,11 +37,20 @@ interface Props {
 
 export default function ProjectDetailClient({ project, initialProcesses, initialMemos }: Props) {
   const router = useRouter();
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
 
   const [tab, setTab] = useState<'process' | 'memo'>('process');
   const [processes, setProcesses] = useState<Process[]>(initialProcesses);
   const [memos, setMemos] = useState<Memo[]>(initialMemos);
+  const [userEmail, setUserEmail] = useState('');
+
+  // 마운트 시 세션 1회 확인
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session) { router.push('/login'); return; }
+      setUserEmail(session.user.email ?? '');
+    });
+  }, [supabase, router]);
 
   // Realtime 구독 — PC에서 변경 시 즉시 반영
   useEffect(() => {
@@ -102,18 +111,13 @@ export default function ProjectDetailClient({ project, initialProcesses, initial
     setMemoError(null);
     setMemoLoading(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        router.push('/login');
-        return;
-      }
       const { data, error } = await supabase
         .from('memos')
         .insert({
           project_id: project.id,
           content: memoContent.trim(),
           tag: memoTag,
-          author: user.email ?? '',
+          author: userEmail,
           is_pinned: false,
         })
         .select()
