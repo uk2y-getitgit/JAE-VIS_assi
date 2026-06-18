@@ -1,4 +1,5 @@
 const { ipcMain, app, BrowserWindow } = require('electron');
+const path  = require('path');
 const db    = require('./db');
 const cloud = require('./supabase');
 const https = require('https');
@@ -7,6 +8,22 @@ let currentUsername = null;
 
 function setCurrentUser(name) { currentUsername = name; }
 function getCurrentUser()     { return currentUsername; }
+
+// 자동실행(로그인 시 시작) 설정 객체.
+// 실행 파일 경로와 인자를 명시해, 부팅 시 앱 경로 없이 실행돼
+// Electron 기본 환영 화면이 뜨는 문제를 방지한다.
+// (특히 개발 모드 electron.exe 는 실행할 앱 경로를 인자로 받아야 한다.)
+function getLoginItemSettings(openAtLogin) {
+  const opts = {
+    openAtLogin,
+    name: 'JAE-VIS v4',
+    path: process.execPath,
+  };
+  if (!app.isPackaged) {
+    opts.args = [path.resolve(app.getAppPath())];
+  }
+  return opts;
+}
 
 // fire-and-forget: 동기화 오류가 UI를 블로킹하지 않도록
 function fireSync(fn) {
@@ -245,7 +262,7 @@ function setupIpcHandlers() {
   ipcMain.handle('update-settings', (_, data) => {
     const result = db.settings.update(data);
     if (typeof data.autoStart === 'boolean') {
-      app.setLoginItemSettings({ openAtLogin: data.autoStart, name: 'JAE-VIS v4' });
+      app.setLoginItemSettings(getLoginItemSettings(data.autoStart));
     }
     fireSync(() => cloud.sync.settings(result));
     return result;
@@ -770,4 +787,4 @@ function notifyDashboard(page) {
   });
 }
 
-module.exports = { setupIpcHandlers, setCurrentUser, getCurrentUser };
+module.exports = { setupIpcHandlers, setCurrentUser, getCurrentUser, getLoginItemSettings };

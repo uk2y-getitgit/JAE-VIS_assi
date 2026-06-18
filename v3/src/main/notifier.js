@@ -67,6 +67,13 @@ function checkAll(username) {
         if (db.notifLog.has(logKey)) return;
         db.notifLog.set(logKey);
 
+        // 부모 공정명 조회 (건진법 그룹: "동바리1차 - 청구" 형식)
+        let procDisplayName = proc.name;
+        if (proc.parent_id) {
+          const parent = db.processes.getById(proc.parent_id);
+          if (parent) procDisplayName = `${parent.name} - ${proc.name}`;
+        }
+
         let title, body;
         if (type === 'overdue') {
           const days = Math.abs(daysLeft);
@@ -92,13 +99,6 @@ function checkAll(username) {
             });
             notif.show();
           } catch (e) { console.error('[Notifier] toast 오류:', e.message); }
-        }
-
-        // 부모 공정명 조회 (건진법 그룹: "동바리1차 - 청구" 형식)
-        let procDisplayName = proc.name;
-        if (proc.parent_id) {
-          const parent = db.processes.getById(proc.parent_id);
-          if (parent) procDisplayName = `${parent.name} - ${proc.name}`;
         }
 
         // 앱 내 알림 저장 (process_name에 부모 포함)

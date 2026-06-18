@@ -103,6 +103,13 @@ function initializeData() {
   }
   const mergedSettings = { ...DEFAULT_SETTINGS, ...currentSettings };
   store.set('settings', mergedSettings);
+
+  // 프로젝트 상태 일괄 보정 — 공정 전부 완료 시 '완료'로 자동 분류.
+  // 그룹 버그로 잘못 분류돼 있던 기존 프로젝트, 모바일에서 직접 완료 처리된
+  // 프로젝트도 데스크탑 시작 시 정상 분류된다. (변경된 것만 갱신 → 부담 없음)
+  store.get('projects', [])
+    .filter(p => !p.is_deleted)
+    .forEach(p => projects.refreshStatus(p.id));
 }
 
 // ─── 사용자 API ──────────────────────────────────────────────
@@ -180,11 +187,18 @@ const projects = {
   getById: (id) => store.get('projects', []).find(p => p.id === id),
 
   // 프로젝트 상태 자동 계산 (공정 데이터 기반)
+  // - 건진법 그룹 컨테이너(is_group)는 상태가 '대기' 고정이므로 집계에서 제외.
+  //   (제외하지 않으면 그룹을 쓰는 프로젝트는 영원히 '완료'가 되지 않음)
+  // - 수동 지정한 '청구완료'는 완료 이후의 최종 상태이므로 자동 계산이 덮어쓰지 않음.
   calcStatus: (projectId) => {
-    const procs = store.get('processes', []).filter(p => p.project_id === projectId && !p.is_deleted);
+    const cur = projects.getById(projectId);
+    if (cur && cur.status === '청구완료') return '청구완료';
+
+    const procs = store.get('processes', [])
+      .filter(p => p.project_id === projectId && !p.is_deleted && !p.is_group);
     if (procs.length === 0) return '대기';
     if (procs.every(p => p.status === '완료')) return '완료';
-    if (procs.some(p => p.status === '진행')) return '진행중';
+    if (procs.some(p => p.status === '진행' || p.status === '완료')) return '진행중';
     return '대기';
   },
 
@@ -213,7 +227,8 @@ const projects = {
   },
   refreshStatus: (projectId) => {
     const status = projects.calcStatus(projectId);
-    projects.update(projectId, { status });
+    const cur = projects.getById(projectId);
+    if (cur && cur.status !== status) projects.update(projectId, { status });
     return status;
   },
   softDelete: (id) => projects.update(id, { is_deleted: true }),

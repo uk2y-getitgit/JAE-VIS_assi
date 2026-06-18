@@ -16,6 +16,7 @@ let currentUser    = null;
 let allProjects    = [];
 let allCategories  = [];
 let currentView    = 'card';
+let showCompleted  = false;  // 전체현황에 완료·청구완료 프로젝트 포함 여부
 let currentPage    = 'dashboard';
 let currentProjId  = null;   // 상세 패널 열린 프로젝트 ID
 let scheduleOffset = 0;      // 3주 스케줄 주차 오프셋 (0 = 오늘 기준)
@@ -364,6 +365,8 @@ function renderDashboard() {
       const l1 = getCatLevel1(p.category_id);
       if (!l1 || l1.id !== catId) return false;
     }
+    // 완료/청구완료 프로젝트는 기본 숨김. (토글 ON 또는 상태 필터로 직접 선택 시 표시)
+    if (!showCompleted && !status && (p.status === '완료' || p.status === '청구완료')) return false;
     return true;
   });
 
@@ -381,17 +384,34 @@ function renderDashboard() {
     return;
   }
 
-  if (currentView === 'card') {
-    container.innerHTML = projects.map(p => renderProjectCard(p)).join('');
-  } else {
-    container.innerHTML = projects.map(p => renderProjectRow(p)).join('');
+  // 완료·청구완료 프로젝트는 하단으로 정렬하고, 활성 프로젝트와 구분선으로 분리
+  const isDone     = p => p.status === '완료' || p.status === '청구완료';
+  const activeList = projects.filter(p => !isDone(p));
+  const doneList   = projects.filter(p => isDone(p));
+  const renderFn   = currentView === 'card' ? renderProjectCard : renderProjectRow;
+
+  let html = activeList.map(renderFn).join('');
+  if (doneList.length) {
+    if (activeList.length) {
+      html += `<div class="completed-divider"><span>완료 ${doneList.length}</span></div>`;
+    }
+    html += doneList.map(renderFn).join('');
   }
+  container.innerHTML = html;
 
   // 클릭 → 상세 패널
   container.querySelectorAll('[data-proj-id]').forEach(el => {
     el.addEventListener('click', (e) => {
       if (e.target.closest('.icon-btn')) return;
       openProjectModal(el.dataset.projId);
+    });
+  });
+
+  // 편집 버튼 → 프로젝트 편집 팝업
+  container.querySelectorAll('.btn-edit-proj').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openProjectDialog(btn.dataset.id);
     });
   });
 
@@ -426,7 +446,7 @@ function renderProjectCard(p) {
     <div class="card-footer">
       <span class="card-proc-count">⚙ ${getProcessCount(p.id)}개 공정</span>
       <div class="row-actions">
-        <button class="icon-btn" title="편집" onclick="openEditProject('${p.id}')">✏️</button>
+        <button class="icon-btn btn-edit-proj" data-id="${p.id}" title="편집">✏️</button>
         <button class="icon-btn del btn-del-proj" data-id="${p.id}" data-name="${p.name}" title="삭제">🗑️</button>
       </div>
     </div>
@@ -451,7 +471,7 @@ function renderProjectRow(p) {
       <span class="status-badge status-${p.status}">${p.status}</span>
     </div>
     <div class="row-actions">
-      <button class="icon-btn" title="편집" onclick="openEditProject('${p.id}')">✏️</button>
+      <button class="icon-btn btn-edit-proj" data-id="${p.id}" title="편집">✏️</button>
       <button class="icon-btn del btn-del-proj" data-id="${p.id}" data-name="${p.name}" title="삭제">🗑️</button>
     </div>
   </div>`;
@@ -480,6 +500,14 @@ async function preloadProcesses() {
 document.getElementById('searchInput').addEventListener('input',    renderDashboard);
 document.getElementById('filterStatus').addEventListener('change',  renderDashboard);
 document.getElementById('filterCategory').addEventListener('change',renderDashboard);
+
+// ─ 완료 포함/제외 토글
+document.getElementById('btnToggleCompleted').addEventListener('click', (e) => {
+  showCompleted = !showCompleted;
+  e.currentTarget.classList.toggle('active', showCompleted);
+  e.currentTarget.textContent = showCompleted ? '완료 제외' : '완료 포함';
+  renderDashboard();
+});
 
 // ─ 뷰 토글
 document.querySelectorAll('.view-btn').forEach(btn => {

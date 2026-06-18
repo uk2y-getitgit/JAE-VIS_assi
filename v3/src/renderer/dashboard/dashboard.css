@@ -307,6 +307,26 @@ nav { flex: 1; padding: 0 8px; display: flex; flex-direction: column; gap: 1px; 
 }
 .view-btn.active { background: var(--accent-light); border-color: var(--border-focus); color: var(--accent); }
 
+/* 완료 포함/제외 토글 */
+.btn-toggle-completed {
+  padding: 6px 12px; background: transparent; border: 1px solid var(--border);
+  border-radius: var(--radius); cursor: pointer; color: var(--text-muted);
+  font-size: 12px; font-weight: 500; font-family: inherit; transition: all .12s;
+  -webkit-app-region: no-drag;
+}
+.btn-toggle-completed:hover { background: var(--bg-hover); border-color: var(--border-hover); color: var(--text); }
+.btn-toggle-completed.active { background: var(--accent-light); border-color: var(--border-focus); color: var(--accent); }
+
+/* 완료 프로젝트 구분선 (활성 ↔ 완료 사이) */
+.completed-divider {
+  grid-column: 1 / -1;
+  display: flex; align-items: center; gap: 12px;
+  margin: 6px 0; color: var(--text-muted); font-size: 12px; font-weight: 600;
+}
+.completed-divider::before, .completed-divider::after {
+  content: ''; flex: 1; height: 1px; background: var(--border);
+}
+
 /* ════════════════════════════════════════════════════════
    Status Badges
 ════════════════════════════════════════════════════════ */

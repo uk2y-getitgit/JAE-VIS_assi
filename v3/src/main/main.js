@@ -3,7 +3,7 @@ const path = require('path');
 const fs   = require('fs');
 const db       = require('./db');
 const notifier = require('./notifier');
-const { setupIpcHandlers, setCurrentUser } = require('./ipcHandlers');
+const { setupIpcHandlers, setCurrentUser, getLoginItemSettings } = require('./ipcHandlers');
 
 // 이전 버전 데이터를 현재 앱 경로로 자동 마이그레이션 (최초 1회)
 function migrateFromV2() {
@@ -259,10 +259,8 @@ app.whenReady().then(() => {
   setupIpcHandlers();
 
   const savedSettings = db.settings.get();
-  app.setLoginItemSettings({
-    openAtLogin: !!savedSettings.autoStart,
-    name: 'JAE-VIS v4',
-  });
+  // 저장된 자동실행 설정을 올바른 실행 경로/인자로 재등록 (이전의 잘못된 등록 자가 치유)
+  app.setLoginItemSettings(getLoginItemSettings(!!savedSettings.autoStart));
 
   ipcMain.on('win-minimize', (e) => {
     const w = BrowserWindow.fromWebContents(e.sender);
