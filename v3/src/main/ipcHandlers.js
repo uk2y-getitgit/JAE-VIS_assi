@@ -6,8 +6,55 @@ const https = require('https');
 
 let currentUsername = null;
 
-function setCurrentUser(name) { currentUsername = name; }
+function setCurrentUser(name) {
+  currentUsername = name;
+  if (name) autoResyncOnLogin(name);
+}
 function getCurrentUser()     { return currentUsername; }
+
+// 로컬 데이터 전체 → Supabase 업로드 (cloud-migrate 핸들러와 로그인 시 자동 재동기화가 공유)
+async function syncLocalDataToCloud(username) {
+  const s = db.settings.get();
+  // 분류(카테고리) 트리는 관리자만 업로드한다 — 소분류(level 3)는 PC마다 랜덤 ID로 생성되므로,
+  // 팀원 PC가 각자 업로드하면 같은 이름의 분류가 서로 다른 id로 중복 등록될 수 있다.
+  const isAdmin = db.users.find(username)?.role === 'admin';
+  const categories = isAdmin ? db.categories.getAll() : [];
+  const allProjects = [
+    ...db.projects.getAll(username),
+    ...db.projects.getDeleted(username),
+  ];
+  const allProcesses = [];
+  for (const p of allProjects) {
+    allProcesses.push(...db.processes.getByProject(p.id));
+  }
+  const allMemos = [];
+  for (const p of allProjects) {
+    allMemos.push(...db.memos.getByProject(p.id));
+  }
+  const qmActive = db.quickMemos.getActive(username);
+  const qmDone   = db.quickMemos.getDone(username);
+
+  const result = await cloud.sync.bulkUpload({
+    categories,
+    projects:   allProjects,
+    processes:  allProcesses,
+    memos:      allMemos,
+    quickMemos: [...qmActive, ...qmDone],
+  });
+  await cloud.sync.settings(s);
+  return result;
+}
+
+// 로그인 직후 자동 재동기화 — 오프라인 중 만들어져 fireSync가 실패했던 변경사항을
+// 앱을 다시 켤 때(=온라인 복귀 시점) 자동으로 캐치업한다. 실패해도 로그인 자체는 막지 않는다.
+// 2초 지연: 앱 시작 시 initCloudFromSettings()의 세션 복원(비동기)이 끝날 시간을 확보하기 위함.
+function autoResyncOnLogin(username) {
+  setTimeout(() => {
+    if (!cloud.isReady()) return;
+    syncLocalDataToCloud(username).catch(e =>
+      console.error('[Supabase 자동 재동기화]', e.message));
+  }, 2000);
+}
 
 // 자동실행(로그인 시 시작) 설정 객체.
 // 실행 파일 경로와 인자를 명시해, 부팅 시 앱 경로 없이 실행돼
@@ -69,8 +116,31 @@ function setupIpcHandlers() {
     return result;
   });
 
-  // 팀원 전체 목록 (역할 포함)
-  ipcMain.handle('get-team-members', () => db.users.getAll());
+  // 팀원 전체 목록 (역할 + 프로젝트 현황 통계 포함)
+  ipcMain.handle('get-team-members', () => {
+    return db.users.getAll().map(u => {
+      const projs = db.projects.getAll(u.name);
+      return {
+        ...u,
+        totalProjects: projs.length,
+        waiting:   projs.filter(p => p.status === '대기').length,
+        active:    projs.filter(p => p.status === '진행중').length,
+        completed: projs.filter(p => p.status === '완료' || p.status === '청구완료').length,
+      };
+    });
+  });
+
+  // 팀 진행 현황 대시보드 — Supabase에서 팀 전체 프로젝트+공정을 실시간 조회 (로컬 저장 안 함)
+  ipcMain.handle('get-team-progress', async () => {
+    if (!cloud.isReady()) throw new Error('Supabase에 먼저 연결해주세요.');
+    return await cloud.pull.teamProjects();
+  });
+
+  // 팀원 프로젝트의 클라우드 메모 조회 (로컬에 없는 프로젝트일 수 있어 클라우드에서 직접 조회)
+  ipcMain.handle('get-team-project-memos', async (_, projectId) => {
+    if (!cloud.isReady()) throw new Error('Supabase에 먼저 연결해주세요.');
+    return await cloud.pull.projectMemos(projectId);
+  });
 
   // Supabase에서 팀원 목록 pull → 로컬에 없는 사용자만 생성
   ipcMain.handle('cloud-pull-team-members', async () => {
@@ -365,38 +435,10 @@ function setupIpcHandlers() {
     return true;
   });
 
-  // 로컬 데이터 전체 → Supabase 업로드 (최초 마이그레이션)
+  // 로컬 데이터 전체 → Supabase 업로드 (최초 마이그레이션 / 수동 캐치업)
   ipcMain.handle('cloud-migrate', async () => {
     if (!cloud.isReady()) throw new Error('Supabase에 먼저 로그인해주세요.');
-    const s = db.settings.get();
-    const username = currentUsername;
-    const categories = db.categories.getAll();
-    const allProjects = [
-      ...db.projects.getAll(username),
-      ...db.projects.getDeleted(username),
-    ];
-    const allProcesses = [];
-    for (const p of allProjects) {
-      const procs = db.processes.getByProject(p.id);
-      allProcesses.push(...procs);
-    }
-    const allMemos = [];
-    for (const p of allProjects) {
-      allMemos.push(...db.memos.getByProject(p.id));
-    }
-    const qmActive = db.quickMemos.getActive(username);
-    const qmDone   = db.quickMemos.getDone(username);
-
-    const result = await cloud.sync.bulkUpload({
-      categories,
-      projects:   allProjects,
-      processes:  allProcesses,
-      memos:      allMemos,
-      quickMemos: [...qmActive, ...qmDone],
-    });
-    // 설정도 sync
-    await cloud.sync.settings(s);
-    return result;
+    return await syncLocalDataToCloud(currentUsername);
   });
 
   // Supabase → 로컬 전체 다운로드 (다른 PC 데이터 가져오기)

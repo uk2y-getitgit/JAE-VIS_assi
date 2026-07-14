@@ -18,6 +18,8 @@ contextBridge.exposeInMainWorld('api', {
   createTeamMember:     (name, pin, role) => ipcRenderer.invoke('create-team-member', name, pin, role),
   getTeamMembers:       ()                => ipcRenderer.invoke('get-team-members'),
   cloudPullTeamMembers: ()                => ipcRenderer.invoke('cloud-pull-team-members'),
+  getTeamProgress:      ()                => ipcRenderer.invoke('get-team-progress'),
+  getTeamProjectMemos:  (projectId)       => ipcRenderer.invoke('get-team-project-memos', projectId),
 
   // 카테고리
   getCategories:  () => ipcRenderer.invoke('get-categories'),

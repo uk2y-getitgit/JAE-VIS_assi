@@ -28,7 +28,9 @@ let currentGroupId = null;   // 건진법 드릴인 상태 (null=최상위, 그�
 const GUNJIN_SUB_ITEMS = ['현장점검', '보고서작성', '제출', '제본', '청구'];
 
 function isGunjinProject(projectId) {
-  const proj = allProjects.find(p => p.id === projectId);
+  const proj = teamModalMode
+    ? teamProgressData?.projects.find(p => p.id === projectId)
+    : allProjects.find(p => p.id === projectId);
   if (!proj?.category_id) return false;
   const cat = allCategories.find(c => c.id === proj.category_id);
   return cat?.name === '건진법';
@@ -51,8 +53,8 @@ window.api.onSetUser(async (username, role) => {
   currentUserRole = role || 'member';
   document.getElementById('tbUser').textContent    = username;
   document.getElementById('sidebarUser').textContent = username;
-  const teamNav = document.querySelector('.nav-item[data-page="team"]');
-  if (teamNav) teamNav.style.display = (currentUserRole === 'admin') ? '' : 'none';
+  document.querySelectorAll('.nav-item[data-page="team"], .nav-item[data-page="team-progress"]')
+    .forEach(el => { el.style.display = (currentUserRole === 'admin') ? '' : 'none'; });
   await loadAll();
 });
 
@@ -133,6 +135,7 @@ function navigateTo(page) {
   if (page === 'trash')     renderTrash();
   if (page === 'settings')  renderSettings();
   if (page === 'team')      renderTeamDashboard();
+  if (page === 'team-progress') renderTeamProgressDashboard();
   if (page === 'memo')      renderMemoPage();
   if (page === 'completed') {
     // 이번주를 기본 기간으로 설정
@@ -711,6 +714,7 @@ window.openEditProject = async (projectId) => {
 // 프로젝트 상세 슬라이드 패널
 // ═══════════════════════════════════════════════════════════
 async function openProjectModal(projectId) {
+  teamModalMode  = false;
   currentProjId  = projectId;
   currentGroupId = null; // 드릴인 상태 초기화
   const proj = allProjects.find(p => p.id === projectId);
@@ -723,21 +727,22 @@ async function openProjectModal(projectId) {
   badge.className   = `status-badge status-${proj.status}`;
 
   document.getElementById('dlgProcProjectId').value = projectId;
+  document.getElementById('btnEditProject').style.display = '';
 
   switchModalTab('processes');
   await renderProcessList(projectId);
   document.getElementById('projectModal').classList.add('open');
 }
 
-document.getElementById('btnCloseModal').addEventListener('click', () => {
+function closeProjectModal() {
   document.getElementById('projectModal').classList.remove('open');
-  currentProjId = null;
-});
+  currentProjId  = null;
+  teamModalMode  = false;
+  document.getElementById('btnEditProject').style.display = '';
+}
+document.getElementById('btnCloseModal').addEventListener('click', closeProjectModal);
 document.getElementById('projectModal').addEventListener('click', (e) => {
-  if (e.target === e.currentTarget) {
-    document.getElementById('projectModal').classList.remove('open');
-    currentProjId = null;
-  }
+  if (e.target === e.currentTarget) closeProjectModal();
 });
 
 // 편집
@@ -762,7 +767,14 @@ function switchModalTab(tabName) {
 // 공정 관리
 // ═══════════════════════════════════════════════════════════
 async function renderProcessList(projectId) {
-  const procs = await window.api.getProcesses(projectId);
+  // 팀 진행 현황 대시보드에서 열람 중이면 이미 메모리에 있는 팀 전체 데이터를 그대로 쓴다
+  // (이 프로젝트는 관리자 PC 로컬 store에 없을 수 있어 window.api.getProcesses가 무의미함).
+  // Supabase 조회 결과는 정렬 순서가 보장되지 않으므로 항상 order_index 기준으로 다시 정렬한다
+  // (로컬 db.processes.getByProject는 이미 정렬돼 있지만, 팀 대시보드 pull 데이터는 아님).
+  const procs = teamModalMode
+    ? teamProgressData.processes.filter(p => p.project_id === projectId)
+        .sort((a, b) => (a.order_index || 0) - (b.order_index || 0))
+    : await window.api.getProcesses(projectId);
   processCache[projectId] = procs;
   const container = document.getElementById('processList');
   const addBtn    = document.getElementById('btnAddProcess');
@@ -770,7 +782,7 @@ async function renderProcessList(projectId) {
   if (procs.length === 0) {
     container.innerHTML = '<div class="empty-state"><div class="empty-icon">⚙️</div><p>등록된 공정이 없습니다.</p></div>';
     setGunjinNav(false);
-    addBtn.style.display = '';
+    addBtn.style.display = teamModalMode ? 'none' : '';
     return;
   }
 
@@ -782,6 +794,16 @@ async function renderProcessList(projectId) {
     container.innerHTML = procs.map(proc => renderProcessItem(proc)).join('');
     attachProcItemEvents(procs, projectId, container);
   }
+
+  if (teamModalMode) applyTeamReadOnlyLock(container, addBtn);
+}
+
+// 팀 진행 현황 대시보드에서 프로젝트를 열람할 때 쓰기 동작을 전부 막는다.
+// (편집/공정추가/공정삭제/상태변경/날짜입력 비활성화 — 그룹 드릴인 탐색은 클릭 이벤트라 영향 없음)
+function applyTeamReadOnlyLock(container, addBtn) {
+  addBtn.style.display = 'none';
+  container.querySelectorAll('.proc-status-select, .date-input').forEach(el => { el.disabled = true; });
+  container.querySelectorAll('.btn-del-proc, .btn-cal').forEach(el => { el.style.display = 'none'; });
 }
 
 // 건진법 그룹 네비게이션 바 표시/숨김
@@ -1063,7 +1085,9 @@ document.getElementById('btnProcDlgSave').addEventListener('click', async () => 
 // 메모·이력
 // ═══════════════════════════════════════════════════════════
 async function renderMemoList(projectId) {
-  const memos = await window.api.getMemosByProject(projectId);
+  const memos = teamModalMode
+    ? await window.api.getTeamProjectMemos(projectId)
+    : await window.api.getMemosByProject(projectId);
   const list  = document.getElementById('memoList');
 
   if (memos.length === 0) {
@@ -1080,16 +1104,18 @@ async function renderMemoList(projectId) {
         ${m.is_pinned ? '<span style="color:var(--cyan);font-size:12px">📌</span>' : ''}
       </div>
       <div class="memo-content">${escapeHtml(m.content)}</div>
-      <button class="memo-delete" data-id="${m.id}" title="삭제">✕</button>
+      ${teamModalMode ? '' : `<button class="memo-delete" data-id="${m.id}" title="삭제">✕</button>`}
     </div>
   `).join('');
 
-  list.querySelectorAll('.memo-delete').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      await window.api.deleteMemo(btn.dataset.id);
-      renderMemoList(projectId);
+  if (!teamModalMode) {
+    list.querySelectorAll('.memo-delete').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        await window.api.deleteMemo(btn.dataset.id);
+        renderMemoList(projectId);
+      });
     });
-  });
+  }
 }
 
 document.getElementById('btnAddMemo').addEventListener('click', async () => {
@@ -2042,9 +2068,15 @@ async function renderTeamDashboard() {
   const members = await window.api.getTeamMembers();
   const tbody = document.getElementById('teamMemberList');
   if (!tbody) return;
-  tbody.innerHTML = members.map(m =>
-    `<tr><td>${escapeHtml(m.name)}</td><td>${m.role === 'admin' ? '관리자' : '팀원'}</td><td>-</td><td>-</td></tr>`
-  ).join('') || '<tr><td colspan="4">등록된 팀원이 없습니다.</td></tr>';
+  tbody.innerHTML = members.map(m => `
+    <tr>
+      <td>${escapeHtml(m.name)}</td>
+      <td>${m.role === 'admin' ? '관리자' : '팀원'}</td>
+      <td>${m.totalProjects ?? 0}건</td>
+      <td><span class="status-badge status-진행중">${m.active ?? 0}</span></td>
+      <td><span class="status-badge status-완료">${m.completed ?? 0}</span></td>
+    </tr>
+  `).join('') || '<tr><td colspan="5">등록된 팀원이 없습니다.</td></tr>';
 }
 
 document.getElementById('btnAddTeamMember')?.addEventListener('click', () => {
@@ -2069,6 +2101,183 @@ document.getElementById('btnTmDlgSave')?.addEventListener('click', async () => {
     alert(e.message || '팀원 추가 실패');
   }
 });
+
+// ═══════════════════════════════════════════════════════════
+// 팀 진행 현황 대시보드 (관리자 전용)
+// — Supabase에서 팀 전체(공유 계정) 프로젝트+공정을 실시간 조회.
+//   로컬 store에는 쓰지 않음 — 다른 팀원 PC의 데이터를 이 PC 로컬에 섞지 않기 위함.
+// ═══════════════════════════════════════════════════════════
+let teamProgressData    = null;  // { projects, processes }
+let teamProgressError   = null;
+let teamProgressMembers = [];    // getTeamMembers() 캐시 (이름/역할)
+let selectedTeamMember  = null;
+
+async function renderTeamProgressDashboard() {
+  document.getElementById('teamProgressMembers').innerHTML = '<div class="empty-state"><p>불러오는 중...</p></div>';
+  document.getElementById('teamProgressProjects').innerHTML = '';
+
+  try {
+    teamProgressData  = await window.api.getTeamProgress();
+    teamProgressError = null;
+  } catch (e) {
+    teamProgressData  = null;
+    teamProgressError = e.message || '팀 진행 현황을 불러오지 못했습니다.';
+  }
+  teamProgressMembers = await window.api.getTeamMembers();
+
+  renderTeamProgressMemberList();
+  renderTeamProgressProjects();
+}
+
+document.getElementById('btnRefreshTeamProgress')?.addEventListener('click', renderTeamProgressDashboard);
+
+function renderTeamProgressMemberList() {
+  const container = document.getElementById('teamProgressMembers');
+
+  if (teamProgressError) {
+    container.innerHTML = `<div class="empty-state"><div class="empty-icon">☁️</div><p>${escapeHtml(teamProgressError)}</p></div>`;
+    return;
+  }
+
+  const byUser = {};
+  teamProgressData.projects.forEach(p => { (byUser[p.username] ||= []).push(p); });
+
+  container.innerHTML = teamProgressMembers.map(m => {
+    const projs  = byUser[m.name] || [];
+    const active = projs.filter(p => p.status === '진행중').length;
+    const done   = projs.filter(p => p.status === '완료' || p.status === '청구완료').length;
+    return `
+      <div class="team-progress-member-item${m.name === selectedTeamMember ? ' active' : ''}" data-name="${escapeHtml(m.name)}">
+        <div class="tpm-name">${escapeHtml(m.name)}</div>
+        <div class="tpm-stats">
+          <span class="status-badge status-진행중">진행 ${active}</span>
+          <span class="status-badge status-완료">완료 ${done}</span>
+          <span class="tpm-total">전체 ${projs.length}건</span>
+        </div>
+      </div>`;
+  }).join('') || '<div class="empty-state"><p>등록된 팀원이 없습니다.</p></div>';
+
+  container.querySelectorAll('.team-progress-member-item').forEach(el => {
+    el.addEventListener('click', () => {
+      selectedTeamMember = el.dataset.name;
+      renderTeamProgressMemberList();
+      renderTeamProgressProjects();
+    });
+  });
+}
+
+function renderTeamProgressProjects() {
+  const container = document.getElementById('teamProgressProjects');
+
+  if (teamProgressError) { container.innerHTML = ''; return; }
+  if (!selectedTeamMember) {
+    container.innerHTML = '<div class="empty-state"><div class="empty-icon">👈</div><p>팀원을 선택하세요.</p></div>';
+    return;
+  }
+
+  const projs = teamProgressData.projects.filter(p => p.username === selectedTeamMember);
+  if (!projs.length) {
+    container.innerHTML = '<div class="empty-state"><p>등록된 프로젝트가 없습니다.</p></div>';
+    return;
+  }
+
+  container.innerHTML = projs.map(p => {
+    const procs = teamProgressData.processes.filter(pr => pr.project_id === p.id);
+    return `
+      <div class="team-progress-project-card" data-proj-id="${p.id}">
+        <div class="tpp-header">
+          <span class="tpp-name">${escapeHtml(p.name)}</span>
+          <span class="status-badge status-${p.status}">${p.status}</span>
+        </div>
+        <div class="tpp-cat">📁 ${getCategoryBreadcrumb(p.category_id)}</div>
+        ${buildMiniStepper(procs)}
+      </div>`;
+  }).join('');
+
+  container.querySelectorAll('.team-progress-project-card').forEach(el => {
+    el.addEventListener('click', () => {
+      const proj = projs.find(p => p.id === el.dataset.projId);
+      openTeamProjectModal(proj);
+    });
+  });
+}
+
+// 공정 목록(순서대로) → 완료 ✓ / 첫 미완료 ●(진행중) / 나머지 ○ 스테퍼 한 줄
+function buildStepperRow(procs) {
+  const ordered = procs.slice().sort((a, b) => (a.order_index || 0) - (b.order_index || 0));
+  if (!ordered.length) return '<span class="mini-stepper-empty">등록된 공정 없음</span>';
+
+  let currentFound = false;
+  const steps = ordered.map(p => {
+    let cls = 'wait', symbol = '○';
+    if (p.status === '완료') { cls = 'done'; symbol = '✓'; }
+    else if (!currentFound)  { cls = 'current'; symbol = '●'; currentFound = true; }
+    return `<span class="mini-stepper-step ${cls}">${escapeHtml(p.name)} ${symbol}</span>`;
+  });
+  return `<div class="mini-stepper">${steps.join('<span class="mini-stepper-arrow">→</span>')}</div>`;
+}
+
+// 프로젝트별 미니 스테퍼.
+// 건진법류(공정 그룹, 예: "동바리1차"/"합벽1차")가 있는 프로젝트는 그룹별로 섞이지 않도록
+// 최상위 비그룹 공정(예: "계약")을 먼저 보여준 뒤, 아직 안 끝난 그룹 중 첫 번째(=현재 작업중)만
+// 대표로 펼쳐 보여주고 나머지 그룹은 개수만 요약한다. 그룹이 없는 일반 프로젝트는 기존처럼
+// 전체 공정을 한 줄 스테퍼로 보여준다.
+function buildMiniStepper(processes) {
+  const groups = processes.filter(p => p.is_group).sort((a, b) => (a.order_index || 0) - (b.order_index || 0));
+
+  if (!groups.length) {
+    return buildStepperRow(processes.filter(p => !p.is_group));
+  }
+
+  const topLevel = processes.filter(p => !p.is_group && !p.parent_id);
+  let html = '';
+  if (topLevel.length) {
+    html += `<div class="mini-stepper-toplevel">${buildStepperRow(topLevel)}</div>`;
+  }
+
+  const groupInfo = groups.map(g => {
+    const children = processes.filter(p => p.parent_id === g.id);
+    const done = children.length > 0 && children.every(c => c.status === '완료');
+    return { group: g, children, done };
+  });
+  const current = groupInfo.find(gi => !gi.done) || groupInfo[groupInfo.length - 1];
+  const others  = groupInfo.filter(gi => gi !== current);
+  const othersIncomplete = others.filter(gi => !gi.done).length;
+
+  html += `<div class="mini-stepper-group-current">
+    <span class="mini-stepper-group-label">현재: ${escapeHtml(current.group.name)}</span> —
+    ${buildStepperRow(current.children)}
+  </div>`;
+
+  if (othersIncomplete > 0) {
+    html += `<div class="mini-stepper-group-rest">(그 외 ${othersIncomplete}개 그룹 대기중)</div>`;
+  } else if (others.length > 0) {
+    html += `<div class="mini-stepper-group-rest">(그 외 ${others.length}개 그룹 완료)</div>`;
+  }
+
+  return html;
+}
+
+// ─ 팀원 프로젝트 상세 모달 (읽기전용 + 메모 작성만 허용) ──────────
+let teamModalMode = false;
+
+async function openTeamProjectModal(project) {
+  teamModalMode  = true;
+  currentProjId  = project.id;
+  currentGroupId = null; // 드릴인 상태 초기화
+
+  document.getElementById('modalProjName').textContent = project.name;
+  document.getElementById('modalProjCat').textContent  = getCategoryBreadcrumb(project.category_id);
+  const badge = document.getElementById('modalStatusBadge');
+  badge.textContent = project.status;
+  badge.className   = `status-badge status-${project.status}`;
+
+  document.getElementById('btnEditProject').style.display = 'none';
+
+  switchModalTab('processes');
+  await renderProcessList(project.id);
+  document.getElementById('projectModal').classList.add('open');
+}
 
 // ═══════════════════════════════════════════════════════════
 // 메모 페이지 — 단기 작업 관리 (v3)

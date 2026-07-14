@@ -408,6 +408,32 @@ const pull = {
     if (error) throw new Error('team_members 조회 실패: ' + error.message);
     return data ?? [];
   },
+
+  // 관리자 "팀 진행 현황" 대시보드 전용 — 팀 전체(공유 계정) 프로젝트+공정을 읽기만 함.
+  // 로컬 저장소에는 쓰지 않는다(다른 팀원 PC의 데이터를 이 PC의 로컬 store에 섞지 않기 위함).
+  async teamProjects() {
+    if (!isReady()) throw new Error('Supabase 미연결 또는 미인증 상태입니다.');
+    const { data: projects, error: e1 } = await supabase
+      .from('projects').select('*').eq('user_id', currentUid).eq('is_deleted', false);
+    if (e1) throw new Error('projects 조회 실패: ' + e1.message);
+
+    const projectIds = (projects ?? []).map(p => p.id);
+    const { data: processes, error: e2 } = projectIds.length
+      ? await supabase.from('processes').select('*').in('project_id', projectIds).eq('is_deleted', false).order('order_index')
+      : { data: [], error: null };
+    if (e2) throw new Error('processes 조회 실패: ' + e2.message);
+
+    return { projects: projects ?? [], processes: processes ?? [] };
+  },
+
+  // 팀원 프로젝트의 클라우드 메모 조회 (로컬 store에 그 프로젝트가 없는 경우 대비)
+  async projectMemos(projectId) {
+    if (!isReady()) throw new Error('Supabase 미연결 또는 미인증 상태입니다.');
+    const { data, error } = await supabase
+      .from('memos').select('*').eq('project_id', projectId).order('created_at', { ascending: false });
+    if (error) throw new Error('memos 조회 실패: ' + error.message);
+    return data ?? [];
+  },
 };
 
 module.exports = { init, getClient, isReady, getSyncStatus, auth, sync, pull };

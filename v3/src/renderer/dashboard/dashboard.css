@@ -1719,3 +1719,77 @@ nav { flex: 1; padding: 0 8px; display: flex; flex-direction: column; gap: 1px; 
 }
 .team-table tbody tr:last-child td { border-bottom: none; }
 .team-table tbody tr:hover { background: var(--bg-hover, rgba(127,127,127,0.06)); }
+
+/* ── 팀 진행 현황 대시보드 (관리자 전용) ───────────────────── */
+.team-progress-layout {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.team-progress-members {
+  width: 260px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  padding: 12px;
+}
+.team-progress-projects {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.team-progress-member-item {
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  margin-bottom: 4px;
+  transition: background .15s;
+  border: 1px solid transparent;
+}
+.team-progress-member-item:hover  { background: var(--bg-hover, rgba(127,127,127,0.06)); }
+.team-progress-member-item.active { background: var(--bg-hover, rgba(127,127,127,0.1)); border-color: var(--border); }
+.tpm-name  { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
+.tpm-stats { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.tpm-total { font-size: 11px; color: var(--text-muted); }
+
+.team-progress-project-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  cursor: pointer;
+  background: var(--bg-card);
+  transition: border-color .15s, background .15s;
+}
+.team-progress-project-card:hover { border-color: var(--cyan, #00cfff88); background: var(--bg-hover, rgba(127,127,127,0.05)); }
+.tpp-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+.tpp-name   { font-size: 14px; font-weight: 600; color: var(--text); }
+.tpp-cat    { font-size: 12px; color: var(--text-muted); margin-bottom: 10px; }
+
+.mini-stepper {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 12px;
+}
+.mini-stepper-step {
+  padding: 3px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+  background: var(--bg-hover, rgba(127,127,127,0.06));
+  color: var(--text-muted);
+}
+.mini-stepper-step.done    { color: var(--status-done-fg, #2ecc71); }
+.mini-stepper-step.current { color: var(--status-active-fg, #00cfff); font-weight: 700; background: var(--status-active-bg, #00cfff22); }
+.mini-stepper-arrow  { color: var(--text-muted); font-size: 11px; }
+.mini-stepper-empty  { font-size: 12px; color: var(--text-muted); }
+.mini-stepper-toplevel     { margin-bottom: 8px; }
+.mini-stepper-group-current { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.mini-stepper-group-label   { font-size: 12px; font-weight: 700; color: var(--text); white-space: nowrap; }
+.mini-stepper-group-rest    { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+
+.process-item.readonly .proc-header { margin-bottom: 0; }

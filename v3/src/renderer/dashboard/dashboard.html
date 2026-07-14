@@ -60,6 +60,9 @@
       <div class="nav-item" data-page="team" style="display:none">
         <span class="nav-icon">👥</span> 팀 현황
       </div>
+      <div class="nav-item" data-page="team-progress" style="display:none">
+        <span class="nav-icon">📊</span> 팀 진행 현황 대시보드
+      </div>
       <div class="nav-item" data-page="trash">
         <span class="nav-icon">🗑️</span> 휴지통
       </div>
@@ -539,10 +542,26 @@
       <div style="padding:20px 24px;overflow-y:auto;flex:1">
         <table class="team-table">
           <thead>
-            <tr><th>이름</th><th>역할</th><th>진행 프로젝트</th><th>완료</th></tr>
+            <tr><th>이름</th><th>역할</th><th>전체 프로젝트</th><th>진행중</th><th>완료</th></tr>
           </thead>
           <tbody id="teamMemberList"></tbody>
         </table>
+      </div>
+    </section>
+
+    <!-- ── PAGE: 팀 진행 현황 대시보드 (관리자 전용) ─────────── -->
+    <section class="page" id="page-team-progress">
+      <div class="page-header">
+        <div class="page-title">팀 진행 현황 대시보드</div>
+        <button class="btn-secondary" id="btnRefreshTeamProgress">🔄 새로고침</button>
+      </div>
+      <div class="team-progress-layout">
+        <div class="team-progress-members" id="teamProgressMembers">
+          <!-- JS로 렌더링 -->
+        </div>
+        <div class="team-progress-projects" id="teamProgressProjects">
+          <div class="empty-state"><div class="empty-icon">👈</div><p>팀원을 선택하세요.</p></div>
+        </div>
       </div>
     </section>
 
