@@ -193,6 +193,9 @@ const projects = {
   calcStatus: (projectId) => {
     const cur = projects.getById(projectId);
     if (cur && cur.status === '청구완료') return '청구완료';
+    // 사용자가 '완료처리'한 프로젝트는 진행 중인 공정 기록이 남아 있어도 '완료' 유지.
+    // (되돌리기 시 manual_complete 해제 → 공정 기준 자동 계산으로 복귀)
+    if (cur && cur.manual_complete) return '완료';
 
     const procs = store.get('processes', [])
       .filter(p => p.project_id === projectId && !p.is_deleted && !p.is_group);

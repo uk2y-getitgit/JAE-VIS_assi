@@ -415,6 +415,28 @@ function renderDashboard() {
     });
   });
 
+  // 완료처리 버튼 → 상태를 '완료'로 (진행 중인 공정 기록은 그대로 유지)
+  container.querySelectorAll('.btn-complete-proj').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (!confirm(`"${btn.dataset.name}" 프로젝트를 완료 처리할까요?\n(진행 중인 공정 기록은 그대로 유지되며, "완료 포함"으로 다시 볼 수 있습니다)`)) return;
+      await window.api.updateProject(btn.dataset.id, { status: '완료', manual_complete: true });
+      allProjects = await window.api.getProjects();
+      renderDashboard();
+    });
+  });
+
+  // 되돌리기 버튼 → 완료처리 해제, 공정 기준으로 상태 재계산
+  container.querySelectorAll('.btn-revert-proj').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (!confirm(`"${btn.dataset.name}" 프로젝트의 완료 처리를 해제하고 다시 진행 상태로 되돌릴까요?`)) return;
+      await window.api.updateProject(btn.dataset.id, { manual_complete: false });
+      allProjects = await window.api.getProjects();
+      renderDashboard();
+    });
+  });
+
   // 삭제 버튼
   container.querySelectorAll('.btn-del-proj').forEach(btn => {
     btn.addEventListener('click', async (e) => {
@@ -425,6 +447,22 @@ function renderDashboard() {
       renderDashboard();
     });
   });
+}
+
+// 프로젝트 카드/행 공용 액션 버튼.
+// - 진행중·대기 프로젝트: '완료처리'(✅) 버튼 → 상태를 '완료'로 (진행 기록 유지)
+// - 수동 완료처리된 프로젝트: '되돌리기'(↩) 버튼 → 다시 진행중으로 자동 계산
+function renderProjActions(p) {
+  const isDone = p.status === '완료' || p.status === '청구완료';
+  let extra = '';
+  if (!isDone) {
+    extra = `<button class="icon-btn btn-complete-proj" data-id="${p.id}" data-name="${p.name}" title="완료 처리">✅</button>`;
+  } else if (p.manual_complete) {
+    extra = `<button class="icon-btn btn-revert-proj" data-id="${p.id}" data-name="${p.name}" title="진행중으로 되돌리기">↩️</button>`;
+  }
+  return `${extra}
+        <button class="icon-btn btn-edit-proj" data-id="${p.id}" title="편집">✏️</button>
+        <button class="icon-btn del btn-del-proj" data-id="${p.id}" data-name="${p.name}" title="삭제">🗑️</button>`;
 }
 
 function renderProjectCard(p) {
@@ -446,8 +484,7 @@ function renderProjectCard(p) {
     <div class="card-footer">
       <span class="card-proc-count">⚙ ${getProcessCount(p.id)}개 공정</span>
       <div class="row-actions">
-        <button class="icon-btn btn-edit-proj" data-id="${p.id}" title="편집">✏️</button>
-        <button class="icon-btn del btn-del-proj" data-id="${p.id}" data-name="${p.name}" title="삭제">🗑️</button>
+        ${renderProjActions(p)}
       </div>
     </div>
   </div>`;
@@ -471,8 +508,7 @@ function renderProjectRow(p) {
       <span class="status-badge status-${p.status}">${p.status}</span>
     </div>
     <div class="row-actions">
-      <button class="icon-btn btn-edit-proj" data-id="${p.id}" title="편집">✏️</button>
-      <button class="icon-btn del btn-del-proj" data-id="${p.id}" data-name="${p.name}" title="삭제">🗑️</button>
+      ${renderProjActions(p)}
     </div>
   </div>`;
 }
@@ -1350,9 +1386,11 @@ async function renderSchedule() {
   content.appendChild(header);
 
   // ── 프로젝트 렌더
+  // 완료·청구완료(완료처리 포함) 프로젝트는 진행 일정이 아니므로 3주 스케줄에서 제외
+  const scheduleBase = allProjects.filter(p => p.status !== '완료' && p.status !== '청구완료');
   const searchFiltered = scheduleSearch
-    ? allProjects.filter(p => p.name.toLowerCase().includes(scheduleSearch.toLowerCase()))
-    : allProjects;
+    ? scheduleBase.filter(p => p.name.toLowerCase().includes(scheduleSearch.toLowerCase()))
+    : scheduleBase;
 
   // 3주 윈도우 내 표시할 공정이 하나라도 있는 프로젝트만 표시
   const schedProjects = searchFiltered.filter(p => {

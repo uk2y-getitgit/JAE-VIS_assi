@@ -101,7 +101,12 @@ function setupIpcHandlers() {
   });
   ipcMain.handle('update-project', (_, id, data) => {
     const before = db.projects.getById(id);
-    const result = db.projects.update(id, data);
+    let result = db.projects.update(id, data);
+    // 완료처리 되돌리기(manual_complete=false) 시 공정 기준으로 상태 재계산
+    if (result && data.manual_complete === false) {
+      db.projects.refreshStatus(id);
+      result = db.projects.getById(id);
+    }
     if (result) {
       fireSync(() => cloud.sync.project(result));
       if (data.status && before && data.status !== before.status) {
@@ -363,7 +368,12 @@ function setupIpcHandlers() {
     const projMap = new Map(s.get('projects', []).map(p => [p.id, p]));
     remote.projects.forEach(p => {
       const existing = projMap.get(p.id);
-      projMap.set(p.id, { ...p, username: existing?.username ?? currentUsername });
+      // manual_complete는 로컬 전용 플래그(클라우드 미동기화)이므로 기존 값 유지.
+      projMap.set(p.id, {
+        ...p,
+        username: existing?.username ?? currentUsername,
+        manual_complete: existing?.manual_complete ?? p.manual_complete ?? false,
+      });
     });
     s.set('projects', [...projMap.values()]);
 
