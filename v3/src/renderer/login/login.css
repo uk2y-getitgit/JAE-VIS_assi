@@ -189,6 +189,38 @@ body {
   box-shadow: 0 0 20px var(--cyan-dim);
 }
 
+/* 설치 게이트 */
+.gate-question {
+  font-size: 13px;
+  color: var(--text);
+  text-align: center;
+  margin-bottom: 20px;
+  line-height: 1.5;
+}
+#setupGate .btn-primary { margin-bottom: 12px; }
+.btn-secondary {
+  width: 100%;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  color: var(--text-dim);
+  font-family: 'Exo 2', sans-serif;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all .2s;
+}
+.btn-secondary:hover {
+  border-color: var(--cyan-dim);
+  color: var(--text);
+}
+.gate-btn-row {
+  display: flex;
+  gap: 10px;
+}
+.gate-btn-row .btn-secondary,
+.gate-btn-row .btn-primary { width: auto; flex: 1; }
+
 /* 자동로그인 체크박스 */
 .auto-login-label {
   display: flex; align-items: center; gap: 8px;

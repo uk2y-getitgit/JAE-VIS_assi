@@ -17,47 +17,82 @@
       <div class="logo-sub">PROJECT MANAGEMENT SYSTEM v2.0</div>
     </div>
 
-    <!-- 탭 -->
-    <div class="login-tabs">
-      <button class="tab-btn active" data-tab="login">로그인</button>
-      <button class="tab-btn"        data-tab="register">신규 등록</button>
+    <!-- 설치 게이트 1단계: 최초 실행 + 클라우드 연결 이력 없는 PC에서만 표시 -->
+    <div id="setupGate" style="display:none">
+      <p class="gate-question">이 PC에서 처음 사용하시나요?</p>
+      <button class="btn-primary" id="btnJoinTeam">이미 사용 중인 팀에 합류합니다</button>
+      <button class="btn-secondary" id="btnFreshInstall">아니요, 이 PC가 팀의 첫 설치입니다</button>
     </div>
 
-    <!-- 로그인 탭 -->
-    <div class="tab-content active" id="tab-login">
-      <div class="user-list" id="userList">
-        <!-- JS로 렌더링 -->
+    <!-- 설치 게이트 2단계: 클라우드 연결 폼 -->
+    <div id="cloudConnectGate" style="display:none">
+      <p class="gate-question">팀 클라우드에 연결합니다</p>
+      <div class="input-group">
+        <label>Supabase URL</label>
+        <input type="text" id="gateSupabaseUrl" placeholder="https://xxxx.supabase.co">
       </div>
-      <div id="pinSection" style="display:none">
-        <div class="input-group">
-          <label>PIN (4자리)</label>
-          <input type="password" id="loginPin" maxlength="4" placeholder="••••" inputmode="numeric">
+      <div class="input-group">
+        <label>Anon Key</label>
+        <input type="password" id="gateSupabaseAnonKey" placeholder="anon public key">
+      </div>
+      <div class="input-group">
+        <label>이메일</label>
+        <input type="email" id="gateEmail" placeholder="공유 계정 이메일">
+      </div>
+      <div class="input-group">
+        <label>비밀번호</label>
+        <input type="password" id="gatePassword" placeholder="공유 계정 비밀번호">
+      </div>
+      <div class="error-msg" id="gateError"></div>
+      <div class="gate-btn-row">
+        <button class="btn-secondary" id="btnGateBack">뒤로</button>
+        <button class="btn-primary" id="btnGateConnect">연결</button>
+      </div>
+    </div>
+
+    <div id="mainTabs" style="display:none">
+      <!-- 탭 -->
+      <div class="login-tabs">
+        <button class="tab-btn active" data-tab="login">로그인</button>
+        <button class="tab-btn"        data-tab="register">신규 등록</button>
+      </div>
+
+      <!-- 로그인 탭 -->
+      <div class="tab-content active" id="tab-login">
+        <div class="user-list" id="userList">
+          <!-- JS로 렌더링 -->
         </div>
-        <label class="auto-login-label">
-          <input type="checkbox" id="chkAutoLogin">
-          <span>다음 실행 시 자동 로그인</span>
-        </label>
+        <div id="pinSection" style="display:none">
+          <div class="input-group">
+            <label>PIN (4자리)</label>
+            <input type="password" id="loginPin" maxlength="4" placeholder="••••" inputmode="numeric">
+          </div>
+          <label class="auto-login-label">
+            <input type="checkbox" id="chkAutoLogin">
+            <span>다음 실행 시 자동 로그인</span>
+          </label>
+        </div>
+        <div class="error-msg" id="loginError"></div>
+        <button class="btn-primary" id="btnLogin">LOGIN</button>
       </div>
-      <div class="error-msg" id="loginError"></div>
-      <button class="btn-primary" id="btnLogin">LOGIN</button>
-    </div>
 
-    <!-- 신규 등록 탭 -->
-    <div class="tab-content" id="tab-register">
-      <div class="input-group">
-        <label>이름</label>
-        <input type="text" id="regName" placeholder="사용자 이름 입력">
+      <!-- 신규 등록 탭 -->
+      <div class="tab-content" id="tab-register">
+        <div class="input-group">
+          <label>이름</label>
+          <input type="text" id="regName" placeholder="사용자 이름 입력">
+        </div>
+        <div class="input-group">
+          <label>PIN (4자리 숫자)</label>
+          <input type="password" id="regPin" maxlength="4" placeholder="••••" inputmode="numeric">
+        </div>
+        <div class="input-group">
+          <label>PIN 확인</label>
+          <input type="password" id="regPinConfirm" maxlength="4" placeholder="••••" inputmode="numeric">
+        </div>
+        <div class="error-msg" id="regError"></div>
+        <button class="btn-primary" id="btnRegister">CREATE USER</button>
       </div>
-      <div class="input-group">
-        <label>PIN (4자리 숫자)</label>
-        <input type="password" id="regPin" maxlength="4" placeholder="••••" inputmode="numeric">
-      </div>
-      <div class="input-group">
-        <label>PIN 확인</label>
-        <input type="password" id="regPinConfirm" maxlength="4" placeholder="••••" inputmode="numeric">
-      </div>
-      <div class="error-msg" id="regError"></div>
-      <button class="btn-primary" id="btnRegister">CREATE USER</button>
     </div>
   </div>
 

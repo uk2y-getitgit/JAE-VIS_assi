@@ -88,7 +88,8 @@ function createDashboardWindow(username) {
   });
   dashWin.loadFile(path.join(__dirname, '../renderer/dashboard/dashboard.html'));
   dashWin.webContents.once('did-finish-load', () => {
-    dashWin.webContents.send('set-user', username);
+    const role = db.users.getAll().find(u => u.name === username)?.role || 'member';
+    dashWin.webContents.send('set-user', username, role);
   });
   dashWin.on('closed', () => { dashWin = null; });
 }

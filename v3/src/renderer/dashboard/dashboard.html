@@ -57,6 +57,12 @@
         <span class="nav-icon">📜</span> 변경 이력
       </div>
       <div class="nav-section">관리</div>
+      <div class="nav-item" data-page="team" style="display:none">
+        <span class="nav-icon">👥</span> 팀 현황
+      </div>
+      <div class="nav-item" data-page="team-progress" style="display:none">
+        <span class="nav-icon">📊</span> 팀 진행 현황 대시보드
+      </div>
       <div class="nav-item" data-page="trash">
         <span class="nav-icon">🗑️</span> 휴지통
       </div>
@@ -527,6 +533,38 @@
       </div>
     </section>
 
+    <!-- ── PAGE: 팀 현황 (관리자 전용) ─────────────────── -->
+    <section class="page" id="page-team">
+      <div class="page-header">
+        <div class="page-title">팀 현황</div>
+        <button class="btn-primary" id="btnAddTeamMember">+ 팀원 추가</button>
+      </div>
+      <div style="padding:20px 24px;overflow-y:auto;flex:1">
+        <table class="team-table">
+          <thead>
+            <tr><th>이름</th><th>역할</th><th>전체 프로젝트</th><th>진행중</th><th>완료</th></tr>
+          </thead>
+          <tbody id="teamMemberList"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ── PAGE: 팀 진행 현황 대시보드 (관리자 전용) ─────────── -->
+    <section class="page" id="page-team-progress">
+      <div class="page-header">
+        <div class="page-title">팀 진행 현황 대시보드</div>
+        <button class="btn-secondary" id="btnRefreshTeamProgress">🔄 새로고침</button>
+      </div>
+      <div class="team-progress-layout">
+        <div class="team-progress-members" id="teamProgressMembers">
+          <!-- JS로 렌더링 -->
+        </div>
+        <div class="team-progress-projects" id="teamProgressProjects">
+          <div class="empty-state"><div class="empty-icon">👈</div><p>팀원을 선택하세요.</p></div>
+        </div>
+      </div>
+    </section>
+
   </main>
 </div>
 
@@ -610,6 +648,12 @@
     <div class="form-group">
       <label class="form-label">중분류</label>
       <select class="form-select" id="dlgCat2">
+        <option value="">선택하세요</option>
+      </select>
+    </div>
+    <div class="form-group" id="dlgCat3Group" style="display:none">
+      <label class="form-label">소분류</label>
+      <select class="form-select" id="dlgCat3">
         <option value="">선택하세요</option>
       </select>
     </div>
@@ -721,6 +765,67 @@
     <div class="dialog-actions">
       <button class="btn-secondary" id="btnCatDlgCancel">취소</button>
       <button class="btn-primary" id="btnCatDlgSave">추가</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── 팀원 추가 다이얼로그 (관리자 전용) ─────────────────── -->
+<div class="dialog-overlay" id="teamMemberDialog">
+  <div class="dialog-box" style="min-width:360px">
+    <div class="dialog-title">팀원 추가</div>
+    <div class="form-group">
+      <label class="form-label">이름 *</label>
+      <input type="text" class="form-input" id="dlgTmName" placeholder="팀원 이름 입력">
+    </div>
+    <div class="form-group">
+      <label class="form-label">PIN (4자리) *</label>
+      <input type="text" class="form-input" id="dlgTmPin" placeholder="0000" maxlength="4" inputmode="numeric">
+    </div>
+    <div class="form-group">
+      <label class="form-label">역할</label>
+      <select class="form-input" id="dlgTmRole">
+        <option value="member">팀원</option>
+        <option value="admin">관리자</option>
+      </select>
+    </div>
+    <div class="dialog-actions">
+      <button class="btn-secondary" id="btnTmDlgCancel">취소</button>
+      <button class="btn-primary" id="btnTmDlgSave">추가</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── 공정 템플릿 패널 (소분류 + 공정 템플릿 편집) ──────── -->
+<div class="dialog-overlay" id="templatePanel">
+  <div class="dialog-box" style="min-width:460px">
+    <div class="dialog-title" id="templatePanelTitle">공정 템플릿</div>
+    <input type="hidden" id="tplCat2Id">
+    <div class="form-group">
+      <label class="form-label">소분류 목록</label>
+      <div class="tpl-sub-list" id="tplSubList">
+        <!-- JS로 렌더링 -->
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">소분류 추가</label>
+      <div class="tpl-sub-add">
+        <input type="text" class="form-input" id="tplSubName" placeholder="소분류 이름 입력">
+        <button class="btn-primary" id="btnTplSubAdd" style="font-size:12px;padding:8px 14px;white-space:nowrap">추가</button>
+      </div>
+    </div>
+    <div class="form-group" id="tplProcGroup" style="display:none">
+      <label class="form-label" style="text-transform:none;letter-spacing:0">
+        <span id="tplProcLabel" style="font-size:11px;font-weight:600;color:var(--text-sec);text-transform:uppercase;letter-spacing:0.04em">공정 템플릿</span>
+        <span style="font-size:10px;color:var(--text-muted);font-weight:400;margin-left:6px">한 줄에 공정 하나씩</span>
+      </label>
+      <textarea class="form-textarea" id="tplProcText" style="min-height:150px;font-size:13px;line-height:1.6" placeholder="예:&#10;자료요청&#10;보고서작성&#10;제출&#10;제본&#10;청구"></textarea>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:6px">
+        ⚡ 이 소분류로 프로젝트 등록 시 위 공정이 순서대로 자동 생성됩니다
+      </div>
+    </div>
+    <div class="dialog-actions">
+      <button class="btn-secondary" id="btnTplPanelClose">닫기</button>
+      <button class="btn-primary" id="btnTplProcSave" style="display:none">공정 템플릿 저장</button>
     </div>
   </div>
 </div>

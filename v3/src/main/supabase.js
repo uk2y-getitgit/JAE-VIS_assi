@@ -134,11 +134,12 @@ const sync = {
   async category(cat) {
     if (!isReady()) return;
     const { error } = await supabase.from('categories').upsert({
-      id:          cat.id,
-      parent_id:   cat.parent_id || null,
-      name:        cat.name,
-      level:       cat.level,
-      order_index: cat.order_index ?? 0,
+      id:                 cat.id,
+      parent_id:          cat.parent_id || null,
+      name:               cat.name,
+      level:              cat.level,
+      order_index:        cat.order_index ?? 0,
+      template_processes: cat.template_processes || null,
     }, { onConflict: 'id' });
     logError('category.upsert', error);
   },
@@ -266,6 +267,18 @@ const sync = {
     logError('settings.upsert', error);
   },
 
+  // ── 팀원 로스터 ────────────────────────────────────────────
+  async teamMember(tm) {
+    if (!isReady()) return;
+    const { error } = await supabase.from('team_members').upsert({
+      id:        tm.id,
+      owner_uid: currentUid,
+      username:  tm.name,
+      role:      tm.role || 'member',
+    }, { onConflict: 'id' });
+    logError('teamMember.upsert', error);
+  },
+
   // ── 전체 데이터 일괄 업로드 (마이그레이션) ─────────────────
   async bulkUpload({ categories, projects, processes, memos, quickMemos }) {
     if (!isReady()) throw new Error('Supabase 미연결 또는 미인증 상태입니다.');
@@ -276,6 +289,7 @@ const sync = {
       const rows = categories.map(c => ({
         id: c.id, parent_id: c.parent_id || null,
         name: c.name, level: c.level, order_index: c.order_index ?? 0,
+        template_processes: c.template_processes || null,
       }));
       const { error } = await supabase.from('categories').upsert(rows, { onConflict: 'id' });
       if (error) throw new Error('categories 업로드 실패: ' + error.message);
@@ -386,6 +400,39 @@ const pull = {
       memos:      memos      ?? [],
       quickMemos: quickMemos ?? [],
     };
+  },
+
+  async teamMembers() {
+    if (!isReady()) throw new Error('Supabase 미연결 또는 미인증 상태입니다.');
+    const { data, error } = await supabase.from('team_members').select('*').eq('owner_uid', currentUid);
+    if (error) throw new Error('team_members 조회 실패: ' + error.message);
+    return data ?? [];
+  },
+
+  // 관리자 "팀 진행 현황" 대시보드 전용 — 팀 전체(공유 계정) 프로젝트+공정을 읽기만 함.
+  // 로컬 저장소에는 쓰지 않는다(다른 팀원 PC의 데이터를 이 PC의 로컬 store에 섞지 않기 위함).
+  async teamProjects() {
+    if (!isReady()) throw new Error('Supabase 미연결 또는 미인증 상태입니다.');
+    const { data: projects, error: e1 } = await supabase
+      .from('projects').select('*').eq('user_id', currentUid).eq('is_deleted', false);
+    if (e1) throw new Error('projects 조회 실패: ' + e1.message);
+
+    const projectIds = (projects ?? []).map(p => p.id);
+    const { data: processes, error: e2 } = projectIds.length
+      ? await supabase.from('processes').select('*').in('project_id', projectIds).eq('is_deleted', false).order('order_index')
+      : { data: [], error: null };
+    if (e2) throw new Error('processes 조회 실패: ' + e2.message);
+
+    return { projects: projects ?? [], processes: processes ?? [] };
+  },
+
+  // 팀원 프로젝트의 클라우드 메모 조회 (로컬 store에 그 프로젝트가 없는 경우 대비)
+  async projectMemos(projectId) {
+    if (!isReady()) throw new Error('Supabase 미연결 또는 미인증 상태입니다.');
+    const { data, error } = await supabase
+      .from('memos').select('*').eq('project_id', projectId).order('created_at', { ascending: false });
+    if (error) throw new Error('memos 조회 실패: ' + error.message);
+    return data ?? [];
   },
 };
 

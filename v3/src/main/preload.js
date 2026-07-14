@@ -15,6 +15,12 @@ contextBridge.exposeInMainWorld('api', {
   createUser: (name, pin) => ipcRenderer.invoke('create-user', name, pin),
   verifyUser: (name, pin) => ipcRenderer.invoke('verify-user', name, pin),
 
+  createTeamMember:     (name, pin, role) => ipcRenderer.invoke('create-team-member', name, pin, role),
+  getTeamMembers:       ()                => ipcRenderer.invoke('get-team-members'),
+  cloudPullTeamMembers: ()                => ipcRenderer.invoke('cloud-pull-team-members'),
+  getTeamProgress:      ()                => ipcRenderer.invoke('get-team-progress'),
+  getTeamProjectMemos:  (projectId)       => ipcRenderer.invoke('get-team-project-memos', projectId),
+
   // 카테고리
   getCategories:  () => ipcRenderer.invoke('get-categories'),
   createCategory: (data) => ipcRenderer.invoke('create-category', data),
@@ -30,6 +36,8 @@ contextBridge.exposeInMainWorld('api', {
   deleteProject:     (id) => ipcRenderer.invoke('delete-project', id),
   restoreProject:    (id) => ipcRenderer.invoke('restore-project', id),
   hardDeleteProject: (id) => ipcRenderer.invoke('hard-delete-project', id),
+  completeProject:   (id) => ipcRenderer.invoke('complete-project', id),
+  revertProject:     (id) => ipcRenderer.invoke('revert-project', id),
 
   // 공정
   getProcesses:     (projectId) => ipcRenderer.invoke('get-processes', projectId),
@@ -74,7 +82,7 @@ contextBridge.exposeInMainWorld('api', {
   onDashboardRefresh: (cb) => ipcRenderer.on('notify-dashboard', (_, page) => cb(page)),
 
   // 이벤트 수신
-  onSetUser:  (cb) => ipcRenderer.on('set-user',  (_, u) => cb(u)),
+  onSetUser:  (cb) => ipcRenderer.on('set-user',  (_, u, role) => cb(u, role)),
   onNavigate: (cb) => ipcRenderer.on('navigate',  (_, p) => cb(p)),
 
   // ── Phase C: 알림 ────────────────────────────────────────

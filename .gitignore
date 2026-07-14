@@ -28,9 +28,15 @@ Gemini API.txt
 **/API Test.txt
 **/claude API.txt
 **/Gemini API.txt
+supabase설정.txt
+데이터백업.txt
+**/supabase설정.txt
+**/데이터백업.txt
 
 # ── Claude / Serena 설정 ──────────────────────────────
-.claude/
+.claude/*
+!.claude/plans/
+!.claude/plans/**
 .serena/
 v3/.serena/
 
