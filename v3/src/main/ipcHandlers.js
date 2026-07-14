@@ -62,6 +62,38 @@ function setupIpcHandlers() {
     return ok;
   });
 
+  // 팀원 계정 생성 (역할 포함) + Supabase 동기화
+  ipcMain.handle('create-team-member', (_, name, pin, role) => {
+    const result = db.users.create(name, pin, role);
+    fireSync(() => cloud.sync.teamMember(result));
+    return result;
+  });
+
+  // 팀원 전체 목록 (역할 포함)
+  ipcMain.handle('get-team-members', () => db.users.getAll());
+
+  // Supabase에서 팀원 목록 pull → 로컬에 없는 사용자만 생성
+  ipcMain.handle('cloud-pull-team-members', async () => {
+    if (!cloud.isReady()) throw new Error('Supabase에 먼저 로그인해주세요.');
+    const remote = await cloud.pull.teamMembers();
+    const knownNames = new Set(db.users.getAll().map(u => u.name));
+    const created = [];
+    const failed  = [];
+    for (const row of remote) {
+      if (knownNames.has(row.username)) continue;
+      try {
+        const nu = db.users.create(row.username, '0000', row.role || 'member');
+        knownNames.add(nu.name);
+        created.push(nu);
+      } catch (e) {
+        // 이름 충돌 등 개별 실패는 건너뛰고 나머지 팀원 생성을 계속 진행한다
+        console.error('[cloud-pull-team-members]', row.username, e.message);
+        failed.push({ username: row.username, error: e.message });
+      }
+    }
+    return { pulled: remote.length, created: created.length, createdUsers: created, failed };
+  });
+
   // ─── 카테고리 ─────────────────────────────────────────────
   ipcMain.handle('get-categories', () => db.categories.getAll());
   ipcMain.handle('create-category', (_, data) => {
@@ -138,6 +170,27 @@ function setupIpcHandlers() {
     db.projects.hardDelete(id);
     fireSync(() => cloud.sync.hardDeleteProject(id));
     return true;
+  });
+  ipcMain.handle('complete-project', (_, id) => {
+    const before = db.projects.getById(id);
+    const result = db.projects.completeProject(id);
+    if (result) {
+      fireSync(() => cloud.sync.project(result));
+      db.changeLogs.add({ username: currentUsername, target_type: 'project', target_id: id,
+        project_id: id, target_name: result.name, action: 'status_change',
+        field_changed: 'status', old_value: before?.status || '', new_value: '완료' });
+    }
+    return result;
+  });
+  ipcMain.handle('revert-project', (_, id) => {
+    const result = db.projects.revertProject(id);
+    if (result) {
+      fireSync(() => cloud.sync.project(result));
+      db.changeLogs.add({ username: currentUsername, target_type: 'project', target_id: id,
+        project_id: id, target_name: result.name, action: 'status_change',
+        field_changed: 'status', old_value: '완료', new_value: result.status });
+    }
+    return result;
   });
 
   // ─── 공정 ─────────────────────────────────────────────────

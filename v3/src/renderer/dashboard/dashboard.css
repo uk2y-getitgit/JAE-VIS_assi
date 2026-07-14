@@ -264,6 +264,10 @@ nav { flex: 1; padding: 0 8px; display: flex; flex-direction: column; gap: 1px; 
 }
 .icon-btn:hover { background: var(--bg-hover); color: var(--text); }
 .icon-btn.del:hover { background: #fee2e2; color: #dc2626; }
+.icon-btn.btn-complete-proj { color: #16a34a; }
+.icon-btn.btn-complete-proj:hover { background: #f0fdf4; color: #15803d; }
+.icon-btn.btn-revert-proj { color: #6b7280; }
+.icon-btn.btn-revert-proj:hover { background: #f3f4f6; color: #374151; }
 
 /* ════════════════════════════════════════════════════════
    Search / Filter
@@ -989,6 +993,34 @@ nav { flex: 1; padding: 0 8px; display: flex; flex-direction: column; gap: 1px; 
 }
 .cat-add-btn:hover { border-color: var(--accent); color: var(--accent); }
 
+/* 중분류 옆 공정템플릿 버튼 */
+.btn-cat-template {
+  padding: 3px 9px; border: 1px solid var(--border); border-radius: var(--radius);
+  background: transparent; color: var(--text-muted); font-size: 11px; font-family: inherit;
+  cursor: pointer; transition: all .12s; white-space: nowrap;
+  -webkit-app-region: no-drag; display: inline-flex; align-items: center; gap: 4px;
+}
+.btn-cat-template:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-light); }
+.cat-tpl-count {
+  display: inline-flex; align-items: center; justify-content: center; min-width: 16px; height: 16px;
+  padding: 0 4px; border-radius: 8px; background: var(--accent); color: #fff; font-size: 10px; font-weight: 700;
+}
+
+/* 공정 템플릿 패널 — 소분류 목록/입력 */
+.tpl-sub-list { display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow-y: auto; }
+.tpl-sub-empty { font-size: 12px; color: var(--text-muted); padding: 10px 4px; }
+.tpl-sub-item {
+  display: flex; align-items: center; gap: 8px; padding: 7px 10px;
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); cursor: pointer;
+  transition: all .12s;
+}
+.tpl-sub-item:hover { border-color: var(--border-hover); }
+.tpl-sub-item.active { border-color: var(--accent); background: var(--accent-light); }
+.tpl-sub-name { flex: 1; font-size: 13px; color: var(--text); font-weight: 500; }
+.tpl-sub-count { font-size: 11px; color: var(--text-muted); }
+.tpl-sub-add { display: flex; gap: 8px; align-items: center; }
+.tpl-sub-add .form-input { flex: 1; }
+
 .theme-toggle-btns { display: flex; gap: 6px; }
 .theme-btn {
   padding: 4px 12px; background: transparent; border: 1px solid var(--border);
@@ -1660,3 +1692,30 @@ nav { flex: 1; padding: 0 8px; display: flex; flex-direction: column; gap: 1px; 
   .report-toggle-arrow { display: none; }
   .status-badge { border: 1px solid #ccc; }
 }
+
+/* ── 팀 현황 테이블 (관리자 전용) ─────────────────────────── */
+.team-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.team-table th,
+.team-table td {
+  padding: 10px 14px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+.team-table thead th {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-sec);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: var(--bg-sidebar);
+}
+.team-table tbody tr:last-child td { border-bottom: none; }
+.team-table tbody tr:hover { background: var(--bg-hover, rgba(127,127,127,0.06)); }

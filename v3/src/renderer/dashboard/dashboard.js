@@ -13,6 +13,7 @@
 // 상태
 // ═══════════════════════════════════════════════════════════
 let currentUser    = null;
+let currentUserRole = 'member';
 let allProjects    = [];
 let allCategories  = [];
 let currentView    = 'card';
@@ -45,10 +46,13 @@ function getDefaultProcMode(proc) {
 // ═══════════════════════════════════════════════════════════
 // 초기화
 // ═══════════════════════════════════════════════════════════
-window.api.onSetUser(async (username) => {
+window.api.onSetUser(async (username, role) => {
   currentUser = username;
+  currentUserRole = role || 'member';
   document.getElementById('tbUser').textContent    = username;
   document.getElementById('sidebarUser').textContent = username;
+  const teamNav = document.querySelector('.nav-item[data-page="team"]');
+  if (teamNav) teamNav.style.display = (currentUserRole === 'admin') ? '' : 'none';
   await loadAll();
 });
 
@@ -128,6 +132,7 @@ function navigateTo(page) {
   if (page === 'history')   renderHistory();
   if (page === 'trash')     renderTrash();
   if (page === 'settings')  renderSettings();
+  if (page === 'team')      renderTeamDashboard();
   if (page === 'memo')      renderMemoPage();
   if (page === 'completed') {
     // 이번주를 기본 기간으로 설정
@@ -315,11 +320,34 @@ document.getElementById('btnAddProcItem').addEventListener('click', () => {
   appendProcItemRow();
 });
 
-function updateAutoProcessUI(cat1Id, cat2Id) {
+// 소분류(level 3) select 채우기 — 중분류의 level-3 자식들
+function populateCat3(cat2Id) {
+  const sel3   = document.getElementById('dlgCat3');
+  const group3 = document.getElementById('dlgCat3Group');
+  const subs   = cat2Id
+    ? allCategories.filter(c => c.parent_id === cat2Id && c.level === 3)
+                   .sort((a, b) => (a.order_index || 0) - (b.order_index || 0))
+    : [];
+  if (subs.length) {
+    sel3.innerHTML = '<option value="">선택하세요</option>' +
+      subs.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+    group3.style.display = '';
+  } else {
+    sel3.innerHTML = '<option value="">해당 없음</option>';
+    group3.style.display = 'none';
+  }
+}
+
+function updateAutoProcessUI(cat1Id, cat2Id, cat3Id) {
   const isEditMode = !!document.getElementById('dialogProjectId').value;
+  // 소분류에 공정 템플릿이 있으면 최우선
+  const cat3 = cat3Id ? allCategories.find(c => c.id === cat3Id) : null;
+  const hasLevel3Template = !!(cat3 && Array.isArray(cat3.template_processes) && cat3.template_processes.length);
+
   const catName = cat2Id ? getCatName(cat2Id) : getCatName(cat1Id);
-  const hasTemplate = !!AUTO_PROCESS_TEMPLATES[catName] || catName === '건진법';
-  const isGunjin = catName === '건진법';
+  const hasTemplate = hasLevel3Template || !!AUTO_PROCESS_TEMPLATES[catName] || catName === '건진법';
+  // 건진법은 소분류 템플릿이 없을 때만 그룹 입력 UI 노출
+  const isGunjin = catName === '건진법' && !hasLevel3Template;
 
   document.getElementById('dlgAutoProcessNotice').style.display = (!isEditMode && hasTemplate) ? '' : 'none';
   document.getElementById('dlgProcItemGroup').style.display      = (!isEditMode && isGunjin)   ? '' : 'none';
@@ -332,12 +360,20 @@ document.getElementById('dlgCat1').addEventListener('change', (e) => {
   sel2.innerHTML = children.length
     ? '<option value="">선택하세요</option>' + children.map(c => `<option value="${c.id}">${c.name}</option>`).join('')
     : '<option value="">해당 없음</option>';
-  updateAutoProcessUI(e.target.value, '');
+  populateCat3('');
+  updateAutoProcessUI(e.target.value, '', '');
 });
 
 document.getElementById('dlgCat2').addEventListener('change', (e) => {
   const cat1Id = document.getElementById('dlgCat1').value;
-  updateAutoProcessUI(cat1Id, e.target.value);
+  populateCat3(e.target.value);
+  updateAutoProcessUI(cat1Id, e.target.value, '');
+});
+
+document.getElementById('dlgCat3').addEventListener('change', (e) => {
+  const cat1Id = document.getElementById('dlgCat1').value;
+  const cat2Id = document.getElementById('dlgCat2').value;
+  updateAutoProcessUI(cat1Id, cat2Id, e.target.value);
 });
 
 // ═══════════════════════════════════════════════════════════
@@ -425,10 +461,35 @@ function renderDashboard() {
       renderDashboard();
     });
   });
+
+  // 완료처리 버튼
+  container.querySelectorAll('.btn-complete-proj').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (!confirm(`"${btn.dataset.name}" 프로젝트를 완료처리할까요?\n공정·메모 데이터는 그대로 보존됩니다.`)) return;
+      await window.api.completeProject(btn.dataset.id);
+      allProjects = await window.api.getProjects();
+      renderDashboard();
+      showToast(`"${btn.dataset.name}" 완료처리 되었습니다.`);
+    });
+  });
+
+  // 되돌리기 버튼
+  container.querySelectorAll('.btn-revert-proj').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      await window.api.revertProject(btn.dataset.id);
+      allProjects = await window.api.getProjects();
+      renderDashboard();
+      showToast(`"${btn.dataset.name}" 활성 상태로 복귀되었습니다.`);
+    });
+  });
 }
 
 function renderProjectCard(p) {
   const progress = calcProjectProgress(p.id);
+  const showComplete = p.status !== '완료' && p.status !== '청구완료';
+  const showRevert   = !!p.manually_completed;
   return `
   <div class="project-card" data-proj-id="${p.id}">
     <div class="card-header">
@@ -446,6 +507,8 @@ function renderProjectCard(p) {
     <div class="card-footer">
       <span class="card-proc-count">⚙ ${getProcessCount(p.id)}개 공정</span>
       <div class="row-actions">
+        ${showComplete ? `<button class="icon-btn btn-complete-proj" data-id="${p.id}" data-name="${p.name}" title="완료처리">✔</button>` : ''}
+        ${showRevert   ? `<button class="icon-btn btn-revert-proj"   data-id="${p.id}" data-name="${p.name}" title="되돌리기">↩</button>` : ''}
         <button class="icon-btn btn-edit-proj" data-id="${p.id}" title="편집">✏️</button>
         <button class="icon-btn del btn-del-proj" data-id="${p.id}" data-name="${p.name}" title="삭제">🗑️</button>
       </div>
@@ -455,6 +518,8 @@ function renderProjectCard(p) {
 
 function renderProjectRow(p) {
   const progress = calcProjectProgress(p.id);
+  const showComplete = p.status !== '완료' && p.status !== '청구완료';
+  const showRevert   = !!p.manually_completed;
   return `
   <div class="project-row" data-proj-id="${p.id}">
     <div class="row-name">${p.name}</div>
@@ -471,6 +536,8 @@ function renderProjectRow(p) {
       <span class="status-badge status-${p.status}">${p.status}</span>
     </div>
     <div class="row-actions">
+      ${showComplete ? `<button class="icon-btn btn-complete-proj" data-id="${p.id}" data-name="${p.name}" title="완료처리">✔</button>` : ''}
+      ${showRevert   ? `<button class="icon-btn btn-revert-proj"   data-id="${p.id}" data-name="${p.name}" title="되돌리기">↩</button>` : ''}
       <button class="icon-btn btn-edit-proj" data-id="${p.id}" title="편집">✏️</button>
       <button class="icon-btn del btn-del-proj" data-id="${p.id}" data-name="${p.name}" title="삭제">🗑️</button>
     </div>
@@ -533,19 +600,39 @@ function openProjectDialog(projectId) {
   document.getElementById('dlgDesc').value              = proj?.description || '';
 
   // 카테고리 세팅
-  let parentId = null;
+  document.getElementById('dlgCat3Group').style.display = 'none';
+  document.getElementById('dlgCat3').innerHTML = '<option value="">선택하세요</option>';
   if (proj?.category_id) {
     const cat = allCategories.find(c => c.id === proj.category_id);
-    if (cat?.level === 2) {
-      parentId = cat.parent_id;
+    if (cat?.level === 3) {
+      // 소분류: level2(부모) → level1(조부모)까지 거슬러 올라가 3단 모두 세팅
+      const cat2 = allCategories.find(c => c.id === cat.parent_id);
+      const cat1 = cat2 ? allCategories.find(c => c.id === cat2.parent_id) : null;
+      if (cat1) document.getElementById('dlgCat1').value = cat1.id;
+      // 중분류 채우기
+      const l2children = cat1 ? allCategories.filter(c => c.parent_id === cat1.id) : [];
+      document.getElementById('dlgCat2').innerHTML =
+        '<option value="">선택하세요</option>' +
+        l2children.map(c => `<option value="${c.id}"${c.id === cat.parent_id ? ' selected' : ''}>${c.name}</option>`).join('');
+      // 소분류 채우기
+      const l3children = allCategories.filter(c => c.parent_id === cat.parent_id && c.level === 3)
+        .sort((a, b) => (a.order_index || 0) - (b.order_index || 0));
+      document.getElementById('dlgCat3').innerHTML =
+        '<option value="">선택하세요</option>' +
+        l3children.map(c => `<option value="${c.id}"${c.id === proj.category_id ? ' selected' : ''}>${c.name}</option>`).join('');
+      document.getElementById('dlgCat3Group').style.display = '';
+    } else if (cat?.level === 2) {
+      const parentId = cat.parent_id;
       document.getElementById('dlgCat1').value = parentId;
       // 중분류 채우기
       const children = allCategories.filter(c => c.parent_id === parentId);
       document.getElementById('dlgCat2').innerHTML =
         '<option value="">선택하세요</option>' +
         children.map(c => `<option value="${c.id}"${c.id === proj.category_id ? ' selected' : ''}>${c.name}</option>`).join('');
+      populateCat3(proj.category_id);
     } else if (cat?.level === 1) {
       document.getElementById('dlgCat1').value = proj.category_id;
+      document.getElementById('dlgCat2').innerHTML = '<option value="">선택하세요</option>';
     }
   } else {
     document.getElementById('dlgCat1').value = '';
@@ -564,9 +651,12 @@ document.getElementById('btnDlgSave').addEventListener('click', async () => {
   const name = document.getElementById('dlgName').value.trim();
   if (!name) { alert('프로젝트명을 입력하세요.'); return; }
 
+  const cat3Val = document.getElementById('dlgCat3').value;
   const cat2Val = document.getElementById('dlgCat2').value;
   const cat1Val = document.getElementById('dlgCat1').value;
-  const catId   = cat2Val && cat2Val !== '' && cat2Val !== '선택하세요' ? cat2Val : (cat1Val || null);
+  const catId   = (cat3Val && cat3Val !== '' && cat3Val !== '선택하세요') ? cat3Val
+                : (cat2Val && cat2Val !== '' && cat2Val !== '선택하세요') ? cat2Val
+                : (cat1Val || null);
   const desc    = document.getElementById('dlgDesc').value.trim();
   const projId  = document.getElementById('dialogProjectId').value;
 
@@ -576,8 +666,17 @@ document.getElementById('btnDlgSave').addEventListener('click', async () => {
     const newProj = await window.api.createProject({ name, description: desc, category_id: catId });
 
     // 공정 자동생성
+    const selectedCat = catId ? allCategories.find(c => c.id === catId) : null;
+    const level3Template = (selectedCat && selectedCat.level === 3 && Array.isArray(selectedCat.template_processes) && selectedCat.template_processes.length)
+      ? selectedCat.template_processes : null;
     const catName = catId ? getCatName(catId) : '';
-    if (catName === '건진법') {
+
+    if (level3Template) {
+      // 신규 경로(최우선): 소분류(level 3) 공정 템플릿 순서대로 생성
+      for (const pname of level3Template) {
+        await window.api.createProcess({ project_id: newProj.id, name: pname });
+      }
+    } else if (catName === '건진법') {
       // 계약: 프로젝트 전체 1건 (최상위, 비그룹)
       await window.api.createProcess({ project_id: newProj.id, name: '계약' });
       // 사용자 입력 항목명 목록으로 그룹 + 세부공정 생성
@@ -1354,8 +1453,9 @@ async function renderSchedule() {
     ? allProjects.filter(p => p.name.toLowerCase().includes(scheduleSearch.toLowerCase()))
     : allProjects;
 
-  // 3주 윈도우 내 표시할 공정이 하나라도 있는 프로젝트만 표시
+  // 완료·청구완료 프로젝트 제외 후, 3주 윈도우 내 표시할 공정이 하나라도 있는 프로젝트만 표시
   const schedProjects = searchFiltered.filter(p => {
+    if (p.status === '완료' || p.status === '청구완료') return false;
     const procs = processCache[p.id] || [];
     if (isGunjinProject(p.id)) {
       const topVis   = procs.some(q => !q.parent_id && !q.is_group && hasBarInWindow(q, firstDay));
@@ -1760,12 +1860,16 @@ function renderCategoryTree() {
           <button class="icon-btn del btn-cat-del" data-id="${cat.id}" title="대분류 삭제">🗑</button>
         </div>
         <div class="cat-l2">
-          ${children.map(c2 => `
+          ${children.map(c2 => {
+            const tplCount = allCategories.filter(c => c.parent_id === c2.id && c.level === 3).length;
+            return `
             <div class="cat-l2-item">
               <span class="cat-l2-name">${c2.name}</span>
+              <button class="btn-cat-template" data-id="${c2.id}" data-name="${c2.name}" title="소분류·공정템플릿 관리">공정템플릿 ✎${tplCount ? ` <span class="cat-tpl-count">${tplCount}</span>` : ''}</button>
               <button class="icon-btn del btn-cat-del" data-id="${c2.id}" title="중분류 삭제">🗑</button>
             </div>
-          `).join('')}
+          `;
+          }).join('')}
           <div class="cat-add-btn btn-cat-add" data-parent="${cat.id}">+ 중분류 추가</div>
         </div>
       </div>`;
@@ -1777,6 +1881,9 @@ function renderCategoryTree() {
   });
   tree.querySelectorAll('.btn-cat-del').forEach(el => {
     el.addEventListener('click', () => deleteCat(el.dataset.id));
+  });
+  tree.querySelectorAll('.btn-cat-template').forEach(el => {
+    el.addEventListener('click', () => openTemplatePanel(el.dataset.id, el.dataset.name));
   });
 }
 
@@ -1796,6 +1903,116 @@ document.getElementById('btnCatDlgSave').addEventListener('click', async () => {
   showToast(`"${name}" 분류가 추가되었습니다.`);
 });
 
+// ─── 공정 템플릿 패널 (소분류 level 3 + template_processes) ──
+let tplCurrentCat2Id = null;   // 현재 패널이 연 중분류 ID
+let tplSelectedCat3Id = null;  // 편집 중인 소분류 ID (null = 미선택)
+
+function openTemplatePanel(cat2Id, cat2Name) {
+  tplCurrentCat2Id  = cat2Id;
+  tplSelectedCat3Id = null;
+  document.getElementById('tplCat2Id').value = cat2Id;
+  document.getElementById('templatePanelTitle').textContent = `공정 템플릿 — ${cat2Name}`;
+  document.getElementById('tplSubName').value = '';
+  renderTemplateSubList();
+  hideTemplateProcEditor();
+  openDialog('templatePanel');
+}
+
+function renderTemplateSubList() {
+  const listEl = document.getElementById('tplSubList');
+  if (!listEl) return;
+  const subs = allCategories
+    .filter(c => c.parent_id === tplCurrentCat2Id && c.level === 3)
+    .sort((a, b) => (a.order_index || 0) - (b.order_index || 0));
+
+  if (subs.length === 0) {
+    listEl.innerHTML = '<div class="tpl-sub-empty">등록된 소분류가 없습니다.</div>';
+    return;
+  }
+
+  listEl.innerHTML = subs.map(c3 => {
+    const count = Array.isArray(c3.template_processes) ? c3.template_processes.length : 0;
+    const active = c3.id === tplSelectedCat3Id ? ' active' : '';
+    return `
+      <div class="tpl-sub-item${active}" data-id="${c3.id}" data-name="${escapeHtml(c3.name)}">
+        <span class="tpl-sub-name">${escapeHtml(c3.name)}</span>
+        <span class="tpl-sub-count">${count ? `공정 ${count}` : '템플릿 없음'}</span>
+        <button class="icon-btn del btn-tpl-sub-del" data-id="${c3.id}" title="소분류 삭제">🗑</button>
+      </div>`;
+  }).join('');
+
+  // 소분류 클릭 → 공정 템플릿 편집
+  listEl.querySelectorAll('.tpl-sub-item').forEach(el => {
+    el.addEventListener('click', (e) => {
+      if (e.target.closest('.btn-tpl-sub-del')) return;
+      selectTemplateSub(el.dataset.id, el.dataset.name);
+    });
+  });
+  // 소분류 삭제
+  listEl.querySelectorAll('.btn-tpl-sub-del').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (!confirm('이 소분류를 삭제할까요?\n(연결된 프로젝트 데이터에는 영향 없음)')) return;
+      await window.api.deleteCategory(btn.dataset.id);
+      allCategories = await window.api.getCategories();
+      if (tplSelectedCat3Id === btn.dataset.id) hideTemplateProcEditor();
+      renderTemplateSubList();
+      renderCategoryTree();
+      populateCategoryFilters();
+      showToast('소분류가 삭제되었습니다.');
+    });
+  });
+}
+
+function selectTemplateSub(cat3Id, cat3Name) {
+  tplSelectedCat3Id = cat3Id;
+  const cat3 = allCategories.find(c => c.id === cat3Id);
+  const procs = Array.isArray(cat3?.template_processes) ? cat3.template_processes : [];
+  document.getElementById('tplProcGroup').style.display = '';
+  document.getElementById('btnTplProcSave').style.display = '';
+  document.getElementById('tplProcLabel').textContent = `공정 템플릿 — ${cat3Name}`;
+  document.getElementById('tplProcText').value = procs.join('\n');
+  renderTemplateSubList(); // active 표시 갱신
+}
+
+function hideTemplateProcEditor() {
+  tplSelectedCat3Id = null;
+  document.getElementById('tplProcGroup').style.display = 'none';
+  document.getElementById('btnTplProcSave').style.display = 'none';
+  document.getElementById('tplProcText').value = '';
+}
+
+// 소분류 추가
+document.getElementById('btnTplSubAdd').addEventListener('click', async () => {
+  const input = document.getElementById('tplSubName');
+  const name  = input.value.trim();
+  if (!name) { alert('소분류 이름을 입력하세요.'); return; }
+  await window.api.createCategory({ parent_id: tplCurrentCat2Id, level: 3, name });
+  allCategories = await window.api.getCategories();
+  input.value = '';
+  renderTemplateSubList();
+  renderCategoryTree();
+  populateCategoryFilters();
+  showToast(`소분류 "${name}"이(가) 추가되었습니다.`);
+});
+document.getElementById('tplSubName').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); document.getElementById('btnTplSubAdd').click(); }
+});
+
+// 공정 템플릿 저장
+document.getElementById('btnTplProcSave').addEventListener('click', async () => {
+  if (!tplSelectedCat3Id) return;
+  const lines = document.getElementById('tplProcText').value
+    .split('\n').map(s => s.trim()).filter(s => s !== '');
+  await window.api.updateCategory(tplSelectedCat3Id, { template_processes: lines });
+  allCategories = await window.api.getCategories();
+  renderTemplateSubList();
+  renderCategoryTree();
+  showToast('공정 템플릿이 저장되었습니다.');
+});
+
+document.getElementById('btnTplPanelClose').addEventListener('click', () => closeDialog('templatePanel'));
+
 // ═══════════════════════════════════════════════════════════
 // 다이얼로그 유틸
 // ═══════════════════════════════════════════════════════════
@@ -1810,10 +2027,47 @@ function openDialog(id) {
 function closeDialog(id) { document.getElementById(id).classList.remove('open'); }
 
 // 오버레이 클릭으로 닫기
-['projectDialog', 'processDialog', 'catDialog'].forEach(id => {
-  document.getElementById(id).addEventListener('click', (e) => {
+['projectDialog', 'processDialog', 'catDialog', 'templatePanel', 'teamMemberDialog'].forEach(id => {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.addEventListener('click', (e) => {
     if (e.target === e.currentTarget) closeDialog(id);
   });
+});
+
+// ═══════════════════════════════════════════════════════════
+// 팀 현황 (관리자 전용)
+// ═══════════════════════════════════════════════════════════
+async function renderTeamDashboard() {
+  const members = await window.api.getTeamMembers();
+  const tbody = document.getElementById('teamMemberList');
+  if (!tbody) return;
+  tbody.innerHTML = members.map(m =>
+    `<tr><td>${escapeHtml(m.name)}</td><td>${m.role === 'admin' ? '관리자' : '팀원'}</td><td>-</td><td>-</td></tr>`
+  ).join('') || '<tr><td colspan="4">등록된 팀원이 없습니다.</td></tr>';
+}
+
+document.getElementById('btnAddTeamMember')?.addEventListener('click', () => {
+  document.getElementById('dlgTmName').value = '';
+  document.getElementById('dlgTmPin').value  = '';
+  document.getElementById('dlgTmRole').value = 'member';
+  openDialog('teamMemberDialog');
+});
+document.getElementById('btnTmDlgCancel')?.addEventListener('click', () => closeDialog('teamMemberDialog'));
+document.getElementById('btnTmDlgSave')?.addEventListener('click', async () => {
+  const name = document.getElementById('dlgTmName').value.trim();
+  const pin  = document.getElementById('dlgTmPin').value.trim();
+  const role = document.getElementById('dlgTmRole').value;
+  if (!name || !pin) { alert('이름과 PIN을 입력하세요.'); return; }
+  if (!/^\d{4}$/.test(pin)) { alert('PIN은 4자리 숫자여야 합니다.'); return; }
+  try {
+    await window.api.createTeamMember(name, pin, role);
+    closeDialog('teamMemberDialog');
+    await renderTeamDashboard();
+    showToast(`"${name}" 팀원이 추가되었습니다.`);
+  } catch (e) {
+    alert(e.message || '팀원 추가 실패');
+  }
 });
 
 // ═══════════════════════════════════════════════════════════

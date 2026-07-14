@@ -134,11 +134,12 @@ const sync = {
   async category(cat) {
     if (!isReady()) return;
     const { error } = await supabase.from('categories').upsert({
-      id:          cat.id,
-      parent_id:   cat.parent_id || null,
-      name:        cat.name,
-      level:       cat.level,
-      order_index: cat.order_index ?? 0,
+      id:                 cat.id,
+      parent_id:          cat.parent_id || null,
+      name:               cat.name,
+      level:              cat.level,
+      order_index:        cat.order_index ?? 0,
+      template_processes: cat.template_processes || null,
     }, { onConflict: 'id' });
     logError('category.upsert', error);
   },
@@ -266,6 +267,18 @@ const sync = {
     logError('settings.upsert', error);
   },
 
+  // ── 팀원 로스터 ────────────────────────────────────────────
+  async teamMember(tm) {
+    if (!isReady()) return;
+    const { error } = await supabase.from('team_members').upsert({
+      id:        tm.id,
+      owner_uid: currentUid,
+      username:  tm.name,
+      role:      tm.role || 'member',
+    }, { onConflict: 'id' });
+    logError('teamMember.upsert', error);
+  },
+
   // ── 전체 데이터 일괄 업로드 (마이그레이션) ─────────────────
   async bulkUpload({ categories, projects, processes, memos, quickMemos }) {
     if (!isReady()) throw new Error('Supabase 미연결 또는 미인증 상태입니다.');
@@ -276,6 +289,7 @@ const sync = {
       const rows = categories.map(c => ({
         id: c.id, parent_id: c.parent_id || null,
         name: c.name, level: c.level, order_index: c.order_index ?? 0,
+        template_processes: c.template_processes || null,
       }));
       const { error } = await supabase.from('categories').upsert(rows, { onConflict: 'id' });
       if (error) throw new Error('categories 업로드 실패: ' + error.message);
@@ -386,6 +400,13 @@ const pull = {
       memos:      memos      ?? [],
       quickMemos: quickMemos ?? [],
     };
+  },
+
+  async teamMembers() {
+    if (!isReady()) throw new Error('Supabase 미연결 또는 미인증 상태입니다.');
+    const { data, error } = await supabase.from('team_members').select('*').eq('owner_uid', currentUid);
+    if (error) throw new Error('team_members 조회 실패: ' + error.message);
+    return data ?? [];
   },
 };
 

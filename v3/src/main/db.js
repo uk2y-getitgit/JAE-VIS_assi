@@ -84,6 +84,29 @@ function initializeData() {
   if (!store.has('quickMemos')) {
     store.set('quickMemos', []);
   }
+  // manually_completed 필드 마이그레이션
+  if (!store.get('projectsManualCompleted')) {
+    const list = store.get('projects', []).map(p => ({
+      ...p,
+      manually_completed: p.manually_completed || false,
+    }));
+    store.set('projects', list);
+    store.set('projectsManualCompleted', true);
+  }
+
+  // users role 마이그레이션 — 기존 계정에 role 없으면 채우고, 최초 생성 계정을 admin으로 지정
+  if (!store.get('usersRoleV1')) {
+    const sorted = store.get('users', []).slice().sort((a, b) =>
+      new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
+    const firstId = sorted[0] ? sorted[0].id : null;
+    const migrated = store.get('users', []).map(u => ({
+      ...u,
+      role: u.role || (firstId && u.id === firstId ? 'admin' : 'member'),
+    }));
+    store.set('users', migrated);
+    store.set('usersRoleV1', true);
+  }
+
   // quickMemos v3 마이그레이션 — type / priority / due_date 필드 추가
   if (!store.get('quickMemosV3')) {
     const existing = store.get('quickMemos', []);
@@ -114,25 +137,36 @@ function initializeData() {
 
 // ─── 사용자 API ──────────────────────────────────────────────
 const users = {
-  getAll: () => store.get('users', []).map(u => ({ id: u.id, name: u.name })),
+  getAll: () => store.get('users', []).map(u => ({ id: u.id, name: u.name, role: u.role || 'member' })),
   find: (name) => store.get('users', []).find(u => u.name === name),
-  create: (name, pin) => {
+  create: (name, pin, role = 'member') => {
     const list = store.get('users', []);
     if (list.find(u => u.name === name)) throw new Error('이미 존재하는 사용자명입니다.');
     if (!/^\d{4}$/.test(pin)) throw new Error('PIN은 4자리 숫자여야 합니다.');
+    // 시스템 최초 계정은 admin — 단, 클라우드 연결 이력이 없는 PC(= 진짜 최초 설치본)에서만.
+    // 이미 Supabase URL이 저장된 PC(팀원 PC가 로그인 화면에서 클라우드 연결을 거친 경우)는
+    // 로컬 users가 비어있어도 자동 admin 승격을 하지 않는다 — 그렇지 않으면 팀원이 "신규 등록"
+    // 경로로 우회 가입할 때마다 그 PC 안에서 admin이 되어버리는 멀티 PC 보안 허점이 생긴다.
+    const isFreshInstall = list.length === 0 && !store.get('settings', {}).supabaseUrl;
+    const safeRole = isFreshInstall ? 'admin' : ((role === 'admin' || role === 'member') ? role : 'member');
     const newUser = {
       id: generateId('user'),
       name,
       pin: hashPin(pin),
+      role: safeRole,
       createdAt: new Date().toISOString(),
     };
     store.set('users', [...list, newUser]);
-    return { id: newUser.id, name: newUser.name };
+    return { id: newUser.id, name: newUser.name, role: newUser.role };
   },
   verify: (name, pin) => {
     const user = store.get('users', []).find(u => u.name === name);
     if (!user) return false;
     return user.pin === hashPin(pin);
+  },
+  setRole: (id, role) => {
+    const safeRole = (role === 'admin' || role === 'member') ? role : 'member';
+    store.set('users', store.get('users', []).map(u => u.id === id ? { ...u, role: safeRole } : u));
   },
 };
 
@@ -189,10 +223,11 @@ const projects = {
   // 프로젝트 상태 자동 계산 (공정 데이터 기반)
   // - 건진법 그룹 컨테이너(is_group)는 상태가 '대기' 고정이므로 집계에서 제외.
   //   (제외하지 않으면 그룹을 쓰는 프로젝트는 영원히 '완료'가 되지 않음)
-  // - 수동 지정한 '청구완료'는 완료 이후의 최종 상태이므로 자동 계산이 덮어쓰지 않음.
+  // - 수동 지정한 '청구완료' 또는 manually_completed=true인 '완료'는 자동 계산이 덮어쓰지 않음.
   calcStatus: (projectId) => {
     const cur = projects.getById(projectId);
     if (cur && cur.status === '청구완료') return '청구완료';
+    if (cur && cur.manually_completed) return '완료';
 
     const procs = store.get('processes', [])
       .filter(p => p.project_id === projectId && !p.is_deleted && !p.is_group);
@@ -230,6 +265,15 @@ const projects = {
     const cur = projects.getById(projectId);
     if (cur && cur.status !== status) projects.update(projectId, { status });
     return status;
+  },
+  completeProject: (id) => {
+    const result = projects.update(id, { status: '완료', manually_completed: true });
+    return result;
+  },
+  revertProject: (id) => {
+    projects.update(id, { manually_completed: false });
+    const status = projects.refreshStatus(id);
+    return projects.getById(id);
   },
   softDelete: (id) => projects.update(id, { is_deleted: true }),
   restore:    (id) => projects.update(id, { is_deleted: false }),

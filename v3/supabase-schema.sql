@@ -6,11 +6,12 @@
 
 -- ── 카테고리 (글로벌 공유, user_id 없음) ────────────────────
 CREATE TABLE IF NOT EXISTS categories (
-  id          TEXT PRIMARY KEY,
-  parent_id   TEXT REFERENCES categories(id) ON DELETE SET NULL,
-  name        TEXT NOT NULL,
-  level       INT  NOT NULL,          -- 1=대분류, 2=중분류
-  order_index INT  DEFAULT 0
+  id                  TEXT PRIMARY KEY,
+  parent_id           TEXT REFERENCES categories(id) ON DELETE SET NULL,
+  name                TEXT NOT NULL,
+  level               INT  NOT NULL,          -- 1=대분류, 2=중분류, 3=소분류
+  order_index         INT  DEFAULT 0,
+  template_processes  JSONB DEFAULT NULL      -- 소분류(level=3) 전용 공정 템플릿 배열, 그 외 NULL
 );
 
 -- ── 사용자 프로필 (Supabase Auth 연동) ──────────────────────
@@ -120,36 +121,44 @@ ALTER TABLE quick_memos   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_settings ENABLE ROW LEVEL SECURITY;
 
 -- 카테고리: 인증된 사용자 전원 읽기/쓰기 (글로벌 공유 분류체계)
+DROP POLICY IF EXISTS "auth_categories_select" ON categories;
 CREATE POLICY "auth_categories_select" ON categories
   FOR SELECT TO authenticated USING (true);
+DROP POLICY IF EXISTS "auth_categories_all" ON categories;
 CREATE POLICY "auth_categories_all" ON categories
   FOR ALL TO authenticated USING (true);
 
 -- 프로필
+DROP POLICY IF EXISTS "own_profile" ON user_profiles;
 CREATE POLICY "own_profile" ON user_profiles
   FOR ALL USING (auth.uid() = id);
 
 -- 프로젝트
+DROP POLICY IF EXISTS "own_projects" ON projects;
 CREATE POLICY "own_projects" ON projects
   FOR ALL USING (auth.uid() = user_id);
 
 -- 공정: 본인 프로젝트 소속만
+DROP POLICY IF EXISTS "own_processes" ON processes;
 CREATE POLICY "own_processes" ON processes
   FOR ALL USING (
     project_id IN (SELECT id FROM projects WHERE user_id = auth.uid())
   );
 
 -- 메모: 본인 프로젝트 소속만
+DROP POLICY IF EXISTS "own_memos" ON memos;
 CREATE POLICY "own_memos" ON memos
   FOR ALL USING (
     project_id IN (SELECT id FROM projects WHERE user_id = auth.uid())
   );
 
 -- 빠른 메모
+DROP POLICY IF EXISTS "own_quick_memos" ON quick_memos;
 CREATE POLICY "own_quick_memos" ON quick_memos
   FOR ALL USING (auth.uid() = user_id);
 
 -- 설정
+DROP POLICY IF EXISTS "own_settings" ON user_settings;
 CREATE POLICY "own_settings" ON user_settings
   FOR ALL USING (auth.uid() = user_id);
 
@@ -163,3 +172,24 @@ CREATE INDEX IF NOT EXISTS idx_processes_parent    ON processes(parent_id);
 CREATE INDEX IF NOT EXISTS idx_memos_project       ON memos(project_id);
 CREATE INDEX IF NOT EXISTS idx_quick_memos_user    ON quick_memos(user_id);
 CREATE INDEX IF NOT EXISTS idx_quick_memos_is_done ON quick_memos(is_done);
+
+-- ================================================================
+-- 마이그레이션 — 기존 설치본용 (소분류 3단계 분류 + 공정 템플릿, Feature 2)
+-- ================================================================
+-- 기존 Supabase 프로젝트에 이미 categories 테이블이 있다면 아래 1줄만 실행하세요:
+-- ALTER TABLE categories ADD COLUMN IF NOT EXISTS template_processes JSONB DEFAULT NULL;
+
+-- ── 팀원 로스터 (공유 계정 모델 — 여러 로컬 사용자를 owner_uid 하나 아래 관리) ──
+CREATE TABLE IF NOT EXISTS team_members (
+  id         TEXT PRIMARY KEY,        -- 로컬 db.js generateId('user') 값 그대로 사용
+  owner_uid  UUID REFERENCES auth.users ON DELETE CASCADE NOT NULL,
+  username   TEXT NOT NULL,
+  role       TEXT DEFAULT 'member',   -- 'admin' | 'member'
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(owner_uid, username)
+);
+ALTER TABLE team_members ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "own_team_members" ON team_members;
+CREATE POLICY "own_team_members" ON team_members
+  FOR ALL USING (auth.uid() = owner_uid);
+CREATE INDEX IF NOT EXISTS idx_team_members_owner ON team_members(owner_uid);
