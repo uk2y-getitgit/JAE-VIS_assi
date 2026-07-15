@@ -516,6 +516,26 @@
               </div>
             </div>
           </div>
+
+          <!-- 구버전 데이터 가져오기 카드 -->
+          <div class="settings-card">
+            <div class="settings-card-title" style="display:flex;align-items:center;gap:8px">
+              <span style="color:var(--cyan)">📦</span> 구버전 데이터 가져오기
+            </div>
+            <div class="cloud-action-row">
+              <div>
+                <div class="setting-label">이 PC의 예전 JAE-VIS 데이터</div>
+                <div class="setting-desc">
+                  구버전에서 작업한 프로젝트를 지금 로그인한 계정 소유로 가져옵니다.
+                  무엇을 가져올지 목록에서 직접 고를 수 있습니다.
+                </div>
+              </div>
+              <button class="btn-primary" id="btnLegacyImport" style="font-size:12px;padding:6px 14px;white-space:nowrap">
+                파일 선택
+              </button>
+            </div>
+            <div id="legacyImportResult" style="font-size:11px;margin-top:6px;min-height:16px;color:var(--accent)"></div>
+          </div>
         </div>
 
         <!-- 오른쪽: 분류 관리 — 관리자 전용 (팀원에게는 JS가 숨김) -->
@@ -862,6 +882,28 @@
 
     <div class="dialog-actions">
       <button class="btn-secondary" id="btnTplPanelClose">닫기</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── 구버전 데이터 가져오기 — 미리보기/선택 ──────────── -->
+<div class="dialog-overlay" id="legacyDialog">
+  <div class="dialog-box" style="min-width:620px;max-width:760px">
+    <div class="dialog-title">구버전 데이터 가져오기</div>
+    <div id="legacySummary" style="font-size:12px;color:var(--text-sec);margin-bottom:10px"></div>
+    <div id="legacyWarn" class="legacy-warn" style="display:none"></div>
+
+    <div class="legacy-toolbar">
+      <button class="btn-secondary" id="btnLegacySelectAll" style="font-size:11px;padding:4px 10px">전체 선택</button>
+      <button class="btn-secondary" id="btnLegacySelectNone" style="font-size:11px;padding:4px 10px">전체 해제</button>
+      <span id="legacyCount" style="font-size:11px;color:var(--text-muted);margin-left:auto"></span>
+    </div>
+
+    <div class="legacy-list" id="legacyList"></div>
+
+    <div class="dialog-actions">
+      <button class="btn-secondary" id="btnLegacyCancel">취소</button>
+      <button class="btn-primary" id="btnLegacyRun">가져오기</button>
     </div>
   </div>
 </div>

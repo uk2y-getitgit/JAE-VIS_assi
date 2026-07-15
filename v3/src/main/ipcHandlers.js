@@ -1,5 +1,6 @@
-const { ipcMain, app, BrowserWindow } = require('electron');
+const { ipcMain, app, BrowserWindow, dialog } = require('electron');
 const path  = require('path');
+const fs    = require('fs');
 const db    = require('./db');
 const cloud = require('./supabase');
 const https = require('https');
@@ -11,6 +12,171 @@ function setCurrentUser(name) {
   if (name) autoResyncOnLogin(name);
 }
 function getCurrentUser()     { return currentUsername; }
+
+// ── 구버전 로컬 데이터 가져오기 ──────────────────────────────
+// 구버전(jae-vis-v3 등)을 쓰던 팀원 PC의 로컬 데이터를 현재 로그인 계정 소유로 가져온다.
+// 자동 이전(migrateFromV2)은 남의 계정·autoLogin까지 통째로 끌어와 사고를 냈기에 제거했고,
+// 대신 "무엇을 가져올지 사용자가 보고 고르는" 명시적 경로만 남긴다.
+//
+// 주의해야 할 두 가지:
+//  1) 프로젝트는 id 기준으로 클라우드에 upsert된다. 구버전 데이터가 남의 환경 복사본에서
+//     출발했다면 id가 겹쳐, 가져와서 올리는 순간 남의 클라우드 데이터를 덮어쓴다.
+//     → 스캔 단계에서 로컬/클라우드 중복을 표시하고 기본 선택에서 제외한다.
+//  2) projects.category_id에 외래키가 걸려 있어, 클라우드에 없는 분류를 참조하면
+//     업로드가 통째로 실패한다. → 분류는 이름으로 다시 매칭하고, 못 찾으면 null로 둔다.
+
+function readLegacyStore(filePath) {
+  const raw = fs.readFileSync(filePath, 'utf8');
+  const data = JSON.parse(raw);
+  if (!Array.isArray(data.projects) || !Array.isArray(data.processes)) {
+    throw new Error('JAE-VIS 데이터 파일이 아닙니다. (projects/processes 없음)');
+  }
+  return data;
+}
+
+// 구버전의 category_id를 현재 분류 트리로 매핑한다.
+// id가 그대로 있으면 그대로 쓰고, 없으면 구버전 파일의 분류 이름으로 현재 트리에서 찾는다.
+function buildCategoryMap(legacy) {
+  const localCats = db.categories.getAll();
+  const localById = new Set(localCats.map(c => c.id));
+  const map = new Map();
+  for (const lc of legacy.categories || []) {
+    if (localById.has(lc.id)) { map.set(lc.id, lc.id); continue; }
+    const byName = localCats.find(c => c.name === lc.name && c.level === lc.level);
+    map.set(lc.id, byName ? byName.id : null);
+  }
+  return map;
+}
+
+function setupLegacyImportHandlers() {
+  ipcMain.handle('legacy-pick-file', async () => {
+    const res = await dialog.showOpenDialog({
+      title: '구버전 JAE-VIS 데이터 파일 선택',
+      defaultPath: app.getPath('appData'),
+      properties: ['openFile'],
+      filters: [{ name: 'JAE-VIS 데이터', extensions: ['json'] }],
+    });
+    if (res.canceled || !res.filePaths[0]) return null;
+    return res.filePaths[0];
+  });
+
+  // 파일을 읽어 "무엇이 들어있는지"만 돌려준다. 아무것도 쓰지 않는다.
+  ipcMain.handle('legacy-scan', async (_, filePath) => {
+    const legacy   = readLegacyStore(filePath);
+    const catMap   = buildCategoryMap(legacy);
+    const localIds = new Set(db.projects.getAll(currentUsername).map(p => p.id));
+    const allLocalIds = new Set((db.projects.getAll(currentUsername).concat(db.projects.getDeleted(currentUsername))).map(p => p.id));
+
+    // 연결돼 있으면 클라우드에 이미 있는 프로젝트 id도 확인해 덮어쓰기 사고를 막는다
+    let cloudIds = null;
+    if (cloud.isReady()) {
+      try {
+        const team = await cloud.pull.teamProjects();
+        cloudIds = new Map((team.projects || []).map(p => [p.id, p.username]));
+      } catch (e) {
+        console.warn('[legacy-scan] 클라우드 조회 실패, 중복 검사 생략:', e.message);
+      }
+    }
+
+    const legacyCatName = (id) => (legacy.categories || []).find(c => c.id === id)?.name || '';
+    const projects = legacy.projects.filter(p => !p.is_deleted).map(p => {
+      const mapped = p.category_id ? catMap.get(p.category_id) : null;
+      return {
+        id:            p.id,
+        name:          p.name,
+        owner:         p.username,
+        status:        p.status,
+        created_at:    p.created_at,
+        procCount:     legacy.processes.filter(q => q.project_id === p.id && !q.is_deleted).length,
+        memoCount:     (legacy.memos || []).filter(m => m.project_id === p.id).length,
+        categoryName:  legacyCatName(p.category_id),
+        categoryLost:  !!(p.category_id && !mapped),   // 현재 트리에서 못 찾은 분류
+        existsLocally: allLocalIds.has(p.id),
+        cloudOwner:    cloudIds ? (cloudIds.get(p.id) ?? null) : null,
+      };
+    });
+
+    return {
+      filePath,
+      targetUser:    currentUsername,
+      cloudChecked:  cloudIds !== null,
+      owners:        [...new Set(legacy.projects.map(p => p.username))],
+      projects,
+    };
+  });
+
+  // 선택한 프로젝트만 현재 계정 소유로 병합한다. 분류·계정·설정은 가져오지 않는다.
+  ipcMain.handle('legacy-import', async (_, filePath, selectedIds) => {
+    if (!currentUsername) throw new Error('로그인 후 이용하세요.');
+    const legacy = readLegacyStore(filePath);
+    const catMap = buildCategoryMap(legacy);
+    const wanted = new Set(selectedIds || []);
+
+    const Store = require('electron-store');
+    const s     = new Store({ name: 'jae-vis-v2-data' });
+
+    const projects  = s.get('projects', []);
+    const processes = s.get('processes', []);
+    const memos     = s.get('memos', []);
+    const existingProjIds = new Set(projects.map(p => p.id));
+    const existingProcIds = new Set(processes.map(p => p.id));
+    const existingMemoIds = new Set(memos.map(m => m.id));
+
+    const result = { projects: 0, processes: 0, memos: 0, skipped: 0, categoryLost: 0 };
+    const importedProjIds = [];
+
+    for (const lp of legacy.projects) {
+      if (!wanted.has(lp.id)) continue;
+      if (existingProjIds.has(lp.id)) { result.skipped++; continue; }
+
+      const mapped = lp.category_id ? catMap.get(lp.category_id) : null;
+      if (lp.category_id && !mapped) result.categoryLost++;
+
+      projects.push({
+        ...lp,
+        username:           currentUsername,   // 소유자를 현재 계정으로 이관
+        category_id:        mapped || null,    // 외래키 위반 방지
+        manually_completed: lp.manually_completed || false,
+        is_deleted:         lp.is_deleted || false,
+      });
+      importedProjIds.push(lp.id);
+      result.projects++;
+    }
+
+    const projSet = new Set(importedProjIds);
+    for (const lproc of legacy.processes) {
+      if (!projSet.has(lproc.project_id) || existingProcIds.has(lproc.id)) continue;
+      processes.push({ ...lproc });
+      result.processes++;
+    }
+    for (const lm of (legacy.memos || [])) {
+      if (!projSet.has(lm.project_id) || existingMemoIds.has(lm.id)) continue;
+      memos.push({ ...lm });
+      result.memos++;
+    }
+
+    s.set('projects', projects);
+    s.set('processes', processes);
+    s.set('memos', memos);
+
+    // 가져온 프로젝트 상태를 공정 기준으로 다시 계산 (구버전 상태값이 낡았을 수 있음)
+    importedProjIds.forEach(id => db.projects.refreshStatus(id));
+
+    // 클라우드에 연결돼 있으면 가져온 것만 즉시 올린다 (팀원은 분류를 올리지 않으므로 안전)
+    if (cloud.isReady()) {
+      for (const id of importedProjIds) {
+        const proj = db.projects.getById(id);
+        if (!proj) continue;
+        await cloud.sync.project(proj);
+        for (const pr of db.processes.getByProject(id)) await cloud.sync.process(pr);
+        for (const m of db.memos.getByProject(id))      await cloud.sync.memo(m);
+      }
+      result.uploaded = importedProjIds.length;
+    }
+
+    return result;
+  });
+}
 
 // 분류(카테고리) 트리는 팀 전체가 공유하는 값이라 관리자만 고칠 수 있다.
 // 렌더러에서 설정 화면의 분류 관리 카드를 숨기지만, 화면을 숨기는 것은 방어가 아니므로
@@ -110,6 +276,7 @@ function initCloudFromSettings() {
 function setupIpcHandlers() {
   // 앱 시작 시 Supabase 자동 연결
   initCloudFromSettings();
+  setupLegacyImportHandlers();
 
   // ─── 사용자 ───────────────────────────────────────────────
   ipcMain.handle('get-users',   () => db.users.getAll());

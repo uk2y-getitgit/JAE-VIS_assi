@@ -2092,6 +2092,129 @@ document.getElementById('btnCatDlgSave').addEventListener('click', async () => {
   showToast(`"${name}" 분류가 추가되었습니다.`);
 });
 
+// ─── 구버전 데이터 가져오기 ─────────────────────────────────
+// 구버전을 쓰던 PC의 로컬 데이터를 현재 계정 소유로 가져온다.
+// 남의 클라우드 데이터를 덮어쓰는 사고가 없도록, 중복되는 프로젝트는 기본 선택에서 빼고
+// 왜 뺐는지 화면에 표시한다. 선택 결정은 사용자가 한다.
+let legacyScanData = null;
+
+document.getElementById('btnLegacyImport').addEventListener('click', async () => {
+  const resultEl = document.getElementById('legacyImportResult');
+  resultEl.textContent = '';
+  try {
+    const filePath = await window.api.legacyPickFile();
+    if (!filePath) return;
+    resultEl.textContent = '파일을 읽는 중...';
+    legacyScanData = await window.api.legacyScan(filePath);
+    resultEl.textContent = '';
+    renderLegacyDialog();
+    openDialog('legacyDialog');
+  } catch (e) {
+    resultEl.style.color = 'var(--status-wait)';
+    resultEl.textContent = '읽기 실패: ' + e.message;
+  }
+});
+
+function legacyBlockReason(p) {
+  if (p.existsLocally) return { tag: '이미 있음', desc: '이 계정에 같은 프로젝트가 이미 있습니다' };
+  if (p.cloudOwner)    return { tag: '클라우드에 있음', desc: `클라우드에 "${p.cloudOwner}" 소유로 이미 있습니다 — 가져오면 덮어씁니다` };
+  return null;
+}
+
+function renderLegacyDialog() {
+  const d = legacyScanData;
+  const listEl = document.getElementById('legacyList');
+
+  document.getElementById('legacySummary').innerHTML =
+    `파일에서 프로젝트 <b>${d.projects.length}건</b>을 찾았습니다. ` +
+    `가져오면 <b>${escapeHtml(d.targetUser)}</b> 계정 소유가 됩니다.` +
+    (d.owners.length ? ` (원래 소유자: ${d.owners.map(escapeHtml).join(', ')})` : '');
+
+  const warnEl = document.getElementById('legacyWarn');
+  const warns = [];
+  if (!d.cloudChecked) {
+    warns.push('클라우드에 연결되지 않아 <b>중복 검사를 못 했습니다.</b> 먼저 팀에 합류(클라우드 연결)한 뒤 가져오시길 권합니다.');
+  }
+  const lost = d.projects.filter(p => p.categoryLost).length;
+  if (lost) warns.push(`${lost}건은 현재 분류 트리에 없는 분류를 쓰고 있어 <b>분류 없음</b>으로 들어옵니다. 가져온 뒤 프로젝트에서 분류를 지정하세요.`);
+  warnEl.style.display = warns.length ? '' : 'none';
+  warnEl.innerHTML = warns.map(w => '⚠ ' + w).join('<br>');
+
+  listEl.innerHTML = d.projects.map(p => {
+    const blocked = legacyBlockReason(p);
+    return `
+      <label class="legacy-item${blocked ? ' blocked' : ''}">
+        <input type="checkbox" class="legacy-cb" data-id="${p.id}" ${blocked ? '' : 'checked'}>
+        <div class="legacy-item-main">
+          <div class="legacy-item-name">${escapeHtml(p.name)}</div>
+          <div class="legacy-item-meta">
+            ${escapeHtml(p.categoryName || '분류 없음')}${p.categoryLost ? ' <span class="legacy-lost">(현재 트리에 없음)</span>' : ''}
+            · 공정 ${p.procCount} · 메모 ${p.memoCount} · ${(p.created_at || '').slice(0, 10)} · ${escapeHtml(p.status || '')}
+          </div>
+          ${blocked ? `<div class="legacy-item-warn">${escapeHtml(blocked.desc)}</div>` : ''}
+        </div>
+        ${blocked ? `<span class="legacy-tag">${escapeHtml(blocked.tag)}</span>` : ''}
+      </label>`;
+  }).join('') || '<div class="tpl-sub-empty">가져올 프로젝트가 없습니다.</div>';
+
+  listEl.querySelectorAll('.legacy-cb').forEach(cb => cb.addEventListener('change', updateLegacyCount));
+  updateLegacyCount();
+}
+
+function updateLegacyCount() {
+  const n = document.querySelectorAll('#legacyList .legacy-cb:checked').length;
+  document.getElementById('legacyCount').textContent = `${n}건 선택됨`;
+  document.getElementById('btnLegacyRun').disabled = n === 0;
+}
+
+document.getElementById('btnLegacySelectAll').addEventListener('click', () => {
+  document.querySelectorAll('#legacyList .legacy-cb').forEach(cb => { cb.checked = true; });
+  updateLegacyCount();
+});
+document.getElementById('btnLegacySelectNone').addEventListener('click', () => {
+  document.querySelectorAll('#legacyList .legacy-cb').forEach(cb => { cb.checked = false; });
+  updateLegacyCount();
+});
+document.getElementById('btnLegacyCancel').addEventListener('click', () => closeDialog('legacyDialog'));
+
+document.getElementById('btnLegacyRun').addEventListener('click', async () => {
+  const ids = [...document.querySelectorAll('#legacyList .legacy-cb:checked')].map(cb => cb.dataset.id);
+  if (!ids.length) return;
+
+  // 덮어쓰기 위험이 있는 항목을 사용자가 일부러 체크했다면 한 번 더 확인한다
+  const risky = legacyScanData.projects.filter(p => ids.includes(p.id) && p.cloudOwner);
+  if (risky.length) {
+    const names = risky.map(p => `· ${p.name} (클라우드 소유: ${p.cloudOwner})`).join('\n');
+    if (!confirm(`아래 ${risky.length}건은 클라우드에 이미 있습니다.\n가져오면 클라우드 데이터를 이 PC의 구버전 내용으로 덮어씁니다.\n\n${names}\n\n계속할까요?`)) return;
+  }
+
+  const btn = document.getElementById('btnLegacyRun');
+  btn.disabled = true; btn.textContent = '가져오는 중...';
+  try {
+    const r = await window.api.legacyImport(legacyScanData.filePath, ids);
+    closeDialog('legacyDialog');
+    allProjects = await window.api.getProjects();
+    await preloadProcesses();
+    renderDashboard();
+
+    const el = document.getElementById('legacyImportResult');
+    el.style.color = 'var(--accent)';
+    el.textContent = `프로젝트 ${r.projects}건 · 공정 ${r.processes}건 · 메모 ${r.memos}건을 가져왔습니다.`
+      + (r.uploaded ? ` 클라우드에 ${r.uploaded}건 업로드 완료.` : ' (클라우드 미연결 — 연결 후 "데이터 업로드"를 눌러주세요.)')
+      + (r.skipped ? ` 중복 ${r.skipped}건은 건너뛰었습니다.` : '')
+      + (r.categoryLost ? ` 분류를 못 찾은 ${r.categoryLost}건은 분류 없음으로 들어왔습니다.` : '');
+    showToast(`구버전 데이터 ${r.projects}건을 가져왔습니다.`);
+  } catch (e) {
+    alert('가져오기 실패: ' + e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = '가져오기';
+  }
+});
+
+document.getElementById('legacyDialog').addEventListener('click', (e) => {
+  if (e.target === e.currentTarget) closeDialog('legacyDialog');
+});
+
 // ─── 공정 템플릿 패널 (분류 자신의 template_processes + 소분류 관리) ──
 let tplCurrentCatId  = null;   // 현재 패널이 연 분류 ID (대분류 or 중분류)
 let tplSelectedCat3Id = null;  // 편집 중인 소분류 ID (null = 미선택)

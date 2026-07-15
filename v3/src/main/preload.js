@@ -110,4 +110,9 @@ contextBridge.exposeInMainWorld('api', {
   cloudSignOut:   ()                          => ipcRenderer.invoke('cloud-sign-out'),
   cloudMigrate:   ()                          => ipcRenderer.invoke('cloud-migrate'),
   cloudPull:      ()                          => ipcRenderer.invoke('cloud-pull'),
+
+  // ── 구버전 로컬 데이터 가져오기 ─────────────────────────
+  legacyPickFile: ()                   => ipcRenderer.invoke('legacy-pick-file'),
+  legacyScan:     (filePath)           => ipcRenderer.invoke('legacy-scan', filePath),
+  legacyImport:   (filePath, ids)      => ipcRenderer.invoke('legacy-import', filePath, ids),
 });

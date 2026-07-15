@@ -766,6 +766,41 @@ nav { flex: 1; padding: 0 8px; display: flex; flex-direction: column; gap: 1px; 
 }
 #procGroupName { font-size: 14px; font-weight: 700; color: var(--text); }
 
+/* 구버전 데이터 가져오기 — 미리보기 목록 */
+.legacy-warn {
+  font-size: 11px; line-height: 1.6; color: var(--status-wait);
+  background: var(--bg-hover); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 8px 10px; margin-bottom: 10px;
+}
+.legacy-toolbar { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+.legacy-list {
+  display: flex; flex-direction: column; gap: 4px;
+  max-height: 340px; overflow-y: auto;
+  border: 1px solid var(--border); border-radius: var(--radius); padding: 6px;
+}
+.legacy-item {
+  display: flex; align-items: flex-start; gap: 10px; padding: 8px 10px;
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius); cursor: pointer; transition: all .12s;
+}
+.legacy-item:hover { border-color: var(--accent); }
+.legacy-item.blocked { opacity: .72; }
+.legacy-item .legacy-cb {
+  width: 15px; height: 15px; flex-shrink: 0; margin-top: 2px;
+  accent-color: var(--accent); cursor: pointer;
+}
+.legacy-item-main { flex: 1; min-width: 0; }
+.legacy-item-name { font-size: 13px; font-weight: 600; color: var(--text); }
+.legacy-item-meta { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
+.legacy-item-warn { font-size: 11px; color: var(--status-wait); margin-top: 4px; }
+.legacy-lost { color: var(--status-wait); }
+.legacy-tag {
+  flex-shrink: 0; font-size: 10px; font-weight: 700; padding: 2px 7px;
+  border-radius: 10px; background: var(--bg-hover); color: var(--text-muted);
+  border: 1px solid var(--border); white-space: nowrap;
+}
+#btnLegacyRun:disabled { opacity: .45; cursor: default; }
+
 /* 묶기 모드 툴바 */
 #procToolbar {
   display: none; align-items: center; gap: 8px; flex-wrap: wrap;
