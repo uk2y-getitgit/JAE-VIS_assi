@@ -278,6 +278,9 @@ function setupIpcHandlers() {
   initCloudFromSettings();
   setupLegacyImportHandlers();
 
+  // 화면에 실제 앱 버전을 띄우기 위함 — 어느 PC에 어떤 빌드가 깔렸는지 확인할 수단이 필요하다
+  ipcMain.handle('get-app-version', () => app.getVersion());
+
   // ─── 사용자 ───────────────────────────────────────────────
   ipcMain.handle('get-users',   () => db.users.getAll());
   ipcMain.handle('create-user', (_, name, pin) => db.users.create(name, pin));
@@ -626,7 +629,7 @@ function setupIpcHandlers() {
   ipcMain.handle('cloud-pull', async () => {
     if (!cloud.isReady()) throw new Error('Supabase에 먼저 로그인해주세요.');
 
-    const remote = await cloud.pull.all();
+    const remote = await cloud.pull.all(currentUsername);
     const Store  = require('electron-store');
     const s      = new Store({ name: 'jae-vis-v2-data' });
 
@@ -635,7 +638,10 @@ function setupIpcHandlers() {
     remote.categories.forEach(c => catMap.set(c.id, c));
     s.set('categories', [...catMap.values()]);
 
-    // ── 프로젝트: id 기준 upsert, username은 현재 로그인 사용자 유지 ──
+    // ── 프로젝트: id 기준 upsert ──
+    // 소유자(username)는 클라우드 값을 그대로 따른다. 예전엔 현재 로그인 사용자로 도장을
+    // 찍어서, 남의 프로젝트가 내려오면 내 것이 되고 다음 업로드 때 클라우드 소유자까지
+    // 바뀌었다. pull.all이 이미 본인 것만 주지만, 소유자를 바꾸는 일은 여기서도 하지 않는다.
     const projMap = new Map(s.get('projects', []).map(p => [p.id, p]));
     remote.projects.forEach(p => {
       const existing = projMap.get(p.id);
@@ -643,7 +649,7 @@ function setupIpcHandlers() {
       // 원격 객체에는 이 필드가 없으므로 그대로 덮어쓰면 pull 한 번에 완료처리가 전부 풀린다.
       projMap.set(p.id, {
         ...p,
-        username: existing?.username ?? currentUsername,
+        username: p.username || existing?.username || currentUsername,
         manually_completed: existing?.manually_completed ?? p.manually_completed ?? false,
       });
     });
@@ -659,11 +665,11 @@ function setupIpcHandlers() {
     remote.memos.forEach(m => memoMap.set(m.id, m));
     s.set('memos', [...memoMap.values()]);
 
-    // ── 빠른메모: id 기준 upsert, username 유지 ──
+    // ── 빠른메모: id 기준 upsert. 소유자는 프로젝트와 같은 이유로 클라우드 값을 따른다 ──
     const qmMap = new Map(s.get('quickMemos', []).map(q => [q.id, q]));
     remote.quickMemos.forEach(q => {
       const existing = qmMap.get(q.id);
-      qmMap.set(q.id, { ...q, username: existing?.username ?? currentUsername });
+      qmMap.set(q.id, { ...q, username: q.username || existing?.username || currentUsername });
     });
     s.set('quickMemos', [...qmMap.values()]);
 

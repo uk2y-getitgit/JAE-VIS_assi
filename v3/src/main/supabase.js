@@ -364,8 +364,20 @@ const sync = {
 
 // ── Supabase → 로컬 전체 데이터 다운로드 ────────────────────
 const pull = {
-  async all() {
+  // 이 PC로 내려받을 데이터 = "현재 로그인한 팀원 본인의 것"만.
+  // user_id는 팀 전체가 공유하는 계정 UID라 이것만으로 거르면 남의 데이터까지 딸려온다.
+  // 반드시 username으로도 걸러야 한다 — 예전엔 이 필터가 없어서, 팀원이 "데이터 가져오기"를
+  // 한 번 누르면 팀 전체 프로젝트가 그 팀원 소유로 로컬에 들어오고, 다음 자동 재동기화에서
+  // 클라우드의 소유자까지 그 팀원으로 덮어써졌다.
+  // (관리자용 팀 전체 조회는 teamProjects()가 따로 담당하며 로컬에 쓰지 않는다.)
+  async all(username) {
     if (!isReady()) throw new Error('Supabase 미연결 또는 미인증 상태입니다.');
+    if (!username) throw new Error('내려받을 사용자를 알 수 없습니다.');
+
+    const { data: myProjIds, error: e0 } = await supabase
+      .from('projects').select('id').eq('user_id', currentUid).eq('username', username);
+    if (e0) throw new Error('projects 조회 실패: ' + e0.message);
+    const ids = (myProjIds ?? []).map(p => p.id);
 
     const [
       { data: categories, error: e1 },
@@ -374,17 +386,12 @@ const pull = {
       { data: memos,      error: e4 },
       { data: quickMemos, error: e5 },
     ] = await Promise.all([
+      // 분류 트리는 팀 공용이므로 사용자로 거르지 않는다
       supabase.from('categories').select('*').order('level').order('order_index'),
-      supabase.from('projects').select('*').eq('user_id', currentUid),
-      supabase.from('processes').select('*').in(
-        'project_id',
-        (await supabase.from('projects').select('id').eq('user_id', currentUid)).data?.map(p => p.id) ?? []
-      ),
-      supabase.from('memos').select('*').in(
-        'project_id',
-        (await supabase.from('projects').select('id').eq('user_id', currentUid)).data?.map(p => p.id) ?? []
-      ),
-      supabase.from('quick_memos').select('*').eq('user_id', currentUid),
+      supabase.from('projects').select('*').eq('user_id', currentUid).eq('username', username),
+      supabase.from('processes').select('*').in('project_id', ids),
+      supabase.from('memos').select('*').in('project_id', ids),
+      supabase.from('quick_memos').select('*').eq('user_id', currentUid).eq('username', username),
     ]);
 
     if (e1) throw new Error('categories 조회 실패: ' + e1.message);

@@ -62,6 +62,9 @@ contextBridge.exposeInMainWorld('api', {
   deleteQuickMemo:         (id) => ipcRenderer.invoke('delete-quick-memo', id),
   updateQuickMemo:         (id, data) => ipcRenderer.invoke('update-quick-memo', id, data),
 
+  // 앱 버전
+  getAppVersion:  () => ipcRenderer.invoke('get-app-version'),
+
   // 설정
   getSettings:    () => ipcRenderer.invoke('get-settings'),
   updateSettings: (data) => ipcRenderer.invoke('update-settings', data),

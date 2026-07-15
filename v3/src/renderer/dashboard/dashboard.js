@@ -54,6 +54,11 @@ function getDefaultProcMode(proc) {
 // ═══════════════════════════════════════════════════════════
 // 초기화
 // ═══════════════════════════════════════════════════════════
+// 실제 빌드 버전 표시 — 팀 PC에 어떤 빌드가 깔렸는지 확인할 수단
+window.api.getAppVersion()
+  .then(v => { const el = document.getElementById('tbVersion'); if (el) el.textContent = `v${v} PRO`; })
+  .catch(() => {});
+
 window.api.onSetUser(async (username, role) => {
   currentUser = username;
   currentUserRole = role || 'member';
