@@ -1,40 +1,19 @@
 const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, screen } = require('electron');
 const path = require('path');
-const fs   = require('fs');
 const db       = require('./db');
 const notifier = require('./notifier');
 const { setupIpcHandlers, setCurrentUser, getLoginItemSettings } = require('./ipcHandlers');
 
-// 이전 버전 데이터를 현재 앱 경로로 자동 마이그레이션 (최초 1회)
-function migrateFromV2() {
-  try {
-    const appData  = app.getPath('appData');
-    const fileName = 'jae-vis-v2-data.json';
-    const destDir  = app.getPath('userData');
-    const destFile = path.join(destDir, fileName);
-
-    // 마이그레이션 후보 경로 (최신 데이터 우선)
-    const candidates = [
-      path.join(appData, 'jae-vis-v3',          fileName),
-      path.join(appData, 'jae-vis-v2-prototype', fileName),
-    ];
-
-    const destSize = fs.existsSync(destFile) ? fs.statSync(destFile).size : 0;
-
-    for (const src of candidates) {
-      if (!fs.existsSync(src)) continue;
-      const srcSize = fs.statSync(src).size;
-      if (srcSize > destSize) {
-        if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
-        fs.copyFileSync(src, destFile);
-        console.log(`[JAE-VIS] 데이터 마이그레이션 완료: ${src}`);
-      }
-      break; // 가장 최신 후보 하나만 처리
-    }
-  } catch (e) {
-    console.error('[JAE-VIS] 마이그레이션 실패:', e.message);
-  }
-}
+// 구버전(jae-vis-v3 / jae-vis-v2-prototype) 데이터 자동 이전 코드는 제거했다.
+//
+// 팀 배포를 시작하면서 이 코드가 해로워졌다. 팀원 PC에 예전 버전이 설치된 적이 있으면
+// 그 폴더에 남은 관리자 계정과 autoLogin 설정을 새 설치본으로 조용히 복사해버려서,
+// 팀원 PC가 로그인 창(=설치 게이트)을 건너뛰고 관리자 계정으로 자동 로그인됐다.
+// 게다가 구버전 데이터에는 role이 없어 usersRoleV1 마이그레이션이 그 계정을 admin으로
+// 승격시켰다. 관리자 PC는 이미 v4 데이터가 더 커서 이 코드가 동작하지 않는 상태였으므로
+// (srcSize > destSize 조건) 제거해도 잃는 것이 없다.
+//
+// 구버전에서 올라오는 PC는 클라우드에서 내려받는 것이 정상 경로다.
 
 const ICON_PATH = path.join(__dirname, '../../assets/icon.ico');
 
@@ -255,7 +234,6 @@ function createTray() {
 
 // 앱 초기화
 app.whenReady().then(() => {
-  migrateFromV2();   // v2 데이터 자동 이전 (v2 데이터가 더 클 때만 실행)
   db.initializeData();
   setupIpcHandlers();
 
@@ -296,8 +274,14 @@ app.whenReady().then(() => {
     createLoginWindow();
   });
 
-  const autoLoginUser = db.settings.getAutoLoginUser();
-  if (autoLoginUser) {
+  // 설치 게이트를 아직 통과하지 않은 PC는 자동로그인을 무시하고 로그인 창을 띄운다.
+  // 남의 데이터가 어떤 경로로든(폴더 복사 등) 들어와 autoLogin이 켜져 있으면, 팀원이
+  // 관리자 계정으로 그대로 진입해버린다 — 그 뒤의 admin 가드가 전부 무의미해진다.
+  // "게이트 통과"는 클라우드에 연결한 적이 있거나(supabaseUrl), 첫 설치를 명시적으로
+  // 고른 경우(installGateDone)를 뜻한다. 둘 다 이 PC에서 직접 선택해야만 남는 값이다.
+  const autoLoginUser  = db.settings.getAutoLoginUser();
+  const needsGate      = !savedSettings.supabaseUrl && !savedSettings.installGateDone;
+  if (autoLoginUser && !needsGate) {
     setCurrentUser(autoLoginUser);
     createDashboardWindow(autoLoginUser);
     createTray();

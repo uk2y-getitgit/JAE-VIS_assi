@@ -98,8 +98,13 @@ function clearErrors() {
 }
 
 // ─── 설치 게이트 ────────────────────────────────────────────
-// 로컬 사용자가 하나도 없고, 이 PC가 클라우드에 연결된 적도 없는 "진짜 최초 실행"일 때만
-// 신규 등록 탭 진입 전에 "팀 합류 vs 최초 설치" 선택지를 보여준다.
+// 이 PC에서 아직 "팀 합류 vs 최초 설치"를 고른 적이 없으면 게이트를 보여준다.
+// 판정 기준은 "로컬 사용자 수"가 아니라 이 PC에서 직접 내린 선택의 흔적이다:
+//   - supabaseUrl      : 클라우드에 연결한 적 있음 (= 팀 합류를 이미 거침)
+//   - installGateDone  : "첫 설치"를 명시적으로 고름
+// 사용자 수로 판정하면, 남의 데이터가 복사돼 들어온 PC가 "이미 쓰던 PC"로 위장돼
+// 게이트를 건너뛴다. 실제로 구버전 자동 이전이 관리자 계정을 팀원 PC로 옮겨서
+// 그 팀원이 관리자로 자동 로그인되는 사고가 있었다.
 function showGate() {
   document.getElementById('setupGate').style.display = 'block';
   document.getElementById('mainTabs').style.display   = 'none';
@@ -110,7 +115,9 @@ function showMainTabs() {
   document.getElementById('mainTabs').style.display         = 'block';
 }
 
-document.getElementById('btnFreshInstall').addEventListener('click', () => {
+document.getElementById('btnFreshInstall').addEventListener('click', async () => {
+  // 이 PC에서 선택을 내렸다는 흔적을 남겨 다음 실행부터는 게이트를 띄우지 않는다
+  try { await window.api.updateSettings({ installGateDone: true }); } catch (e) { /* 무시 */ }
   showMainTabs();
   renderUsers();
 });
@@ -162,16 +169,16 @@ document.getElementById('btnGateConnect').addEventListener('click', async () => 
 // 초기 로드
 (async () => {
   try {
-    const users  = await window.api.getUsers();
-    const status = await window.api.cloudGetStatus();
+    const settings = await window.api.getSettings();
+    const status   = await window.api.cloudGetStatus();
 
-    if (users.length === 0 && !status?.connected) {
-      // 이 PC에서 처음 실행되고, 클라우드 연결 이력도 없는 경우에만 게이트를 보여준다.
+    if (!settings?.supabaseUrl && !settings?.installGateDone) {
+      // 이 PC에서 설치 선택을 내린 적이 없다 — 로컬 사용자가 있어도 게이트를 먼저 보여준다.
       showGate();
       return;
     }
 
-    // 그 외(로컬 사용자가 있거나, 이미 클라우드 연결된 적 있는 PC)는 기존 흐름 그대로.
+    // 그 외(이미 선택을 마친 PC)는 기존 흐름 그대로.
     showMainTabs();
     if (status?.connected && status?.authenticated) {
       try {

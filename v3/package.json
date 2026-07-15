@@ -1,6 +1,6 @@
 {
   "name": "jae-vis-v4",
-  "version": "4.2.1",
+  "version": "4.2.2",
   "description": "JAE-VIS v4 PRO — JARVIS Windows AI Assistant",
   "main": "src/main/main.js",
   "scripts": {
