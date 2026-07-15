@@ -23,17 +23,23 @@ let currentProjId  = null;   // 상세 패널 열린 프로젝트 ID
 let scheduleOffset = 0;      // 3주 스케줄 주차 오프셋 (0 = 오늘 기준)
 let scheduleSearch = '';     // 3주 스케줄 프로젝트 검색어
 const procModes    = {};     // 공정별 단기/장기 모드 { procId: 'short'|'long' }
-let currentGroupId = null;   // 건진법 드릴인 상태 (null=최상위, 그룹ID=세부보기)
+let currentGroupId = null;   // 항목 드릴인 상태 (null=최상위, 그룹ID=세부보기)
+let selectMode     = false;  // 묶기 모드 (공정 앞 체크박스 표시)
 
-const GUNJIN_SUB_ITEMS = ['현장점검', '보고서작성', '제출', '제본', '청구'];
+// 이 프로젝트가 항목(그룹)을 쓰는가 — 분류 이름이 아니라 데이터 구조로 판정한다.
+// 항목은 건진법 전용이 아니라 모든 분류에서 쓸 수 있다: 같은 프로젝트에서 공정 세트가
+// 반복될 때(시특법 상반기/하반기, 계획서 보완작성 등) 기존 공정을 항목으로 묶고
+// 새 항목을 추가한다. 그룹이 하나도 없으면 평범한 단일 공정 목록으로 본다.
+function usesGroups(procs) {
+  return Array.isArray(procs) && procs.some(p => p.is_group);
+}
 
-function isGunjinProject(projectId) {
+// 항목의 하위 공정 기본값 — 분류의 기본 공정 템플릿(설정창에서 편집)을 그대로 쓴다.
+function groupTemplateFor(projectId) {
   const proj = teamModalMode
     ? teamProgressData?.projects.find(p => p.id === projectId)
     : allProjects.find(p => p.id === projectId);
-  if (!proj?.category_id) return false;
-  const cat = allCategories.find(c => c.id === proj.category_id);
-  return cat?.name === '건진법';
+  return resolveTemplate(proj?.category_id)?.processes || [];
 }
 
 // 공정 날짜 기본 모드 추론 (기존 데이터 기반)
@@ -190,17 +196,26 @@ function populateCategoryFilters() {
     level1.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
 }
 
-// 공정 자동생성 템플릿 (분류명 기준)
-const AUTO_PROCESS_TEMPLATES = {
-  '계획서': ['자료요청', '보고서작성', '제출', '제본', '청구'],
-  '시특법': ['착수 및 계약', '현장점검', '보고서작성', '제출', '제본', '준공 및 청구'],
-  '관리법': ['계약', '현장점검', '보고서작성', '제출', '제본', '청구'],
-  // 건진법은 그룹 계층구조로 별도 처리
-};
-
 function getCatName(id) {
   const cat = allCategories.find(c => c.id === id);
   return cat ? cat.name : '';
+}
+
+// 공정 자동생성 템플릿 해석 — 분류 자신부터 부모 방향으로 거슬러 올라가며
+// 처음 발견한 template_processes를 사용한다. (소분류 → 중분류 → 대분류)
+// 템플릿 값은 설정창에서 사용자가 편집하며, 이름이 아닌 ID로 찾으므로
+// 분류 이름을 바꿔도 자동생성이 끊기지 않는다. 건진법만 그룹 계층구조로 별도 처리.
+function resolveTemplate(catId) {
+  let cur = catId ? allCategories.find(c => c.id === catId) : null;
+  const seen = new Set();
+  while (cur && !seen.has(cur.id)) {
+    seen.add(cur.id);
+    if (Array.isArray(cur.template_processes) && cur.template_processes.length) {
+      return { processes: cur.template_processes, source: cur };
+    }
+    cur = cur.parent_id ? allCategories.find(c => c.id === cur.parent_id) : null;
+  }
+  return null;
 }
 
 // ── 건진법 다중 항목 입력 ──────────────────────────────────
@@ -348,9 +363,11 @@ function updateAutoProcessUI(cat1Id, cat2Id, cat3Id) {
   const hasLevel3Template = !!(cat3 && Array.isArray(cat3.template_processes) && cat3.template_processes.length);
 
   const catName = cat2Id ? getCatName(cat2Id) : getCatName(cat1Id);
-  const hasTemplate = hasLevel3Template || !!AUTO_PROCESS_TEMPLATES[catName] || catName === '건진법';
-  // 건진법은 소분류 템플릿이 없을 때만 그룹 입력 UI 노출
-  const isGunjin = catName === '건진법' && !hasLevel3Template;
+  // 등록 시점의 항목 입력칸은 분류가 건진법 자신일 때만 띄운다(저장 로직과 동일 조건).
+  // 소분류를 고르면 그룹이 아니라 템플릿 경로를 타므로, 띄워봤자 입력해도 그룹이 생기지 않는다.
+  // 다른 분류는 등록 후 공정 목록에서 "묶기"·"항목 추가"로 항목을 만든다.
+  const isGunjin = catName === '건진법' && !cat3Id;
+  const hasTemplate = hasLevel3Template || isGunjin || !!resolveTemplate(cat3Id || cat2Id || cat1Id);
 
   document.getElementById('dlgAutoProcessNotice').style.display = (!isEditMode && hasTemplate) ? '' : 'none';
   document.getElementById('dlgProcItemGroup').style.display      = (!isEditMode && isGunjin)   ? '' : 'none';
@@ -675,25 +692,28 @@ document.getElementById('btnDlgSave').addEventListener('click', async () => {
     const catName = catId ? getCatName(catId) : '';
 
     if (level3Template) {
-      // 신규 경로(최우선): 소분류(level 3) 공정 템플릿 순서대로 생성
+      // 최우선: 소분류(level 3) 자신의 공정 템플릿 순서대로 생성
       for (const pname of level3Template) {
         await window.api.createProcess({ project_id: newProj.id, name: pname });
       }
     } else if (catName === '건진법') {
-      // 계약: 프로젝트 전체 1건 (최상위, 비그룹)
+      // 건진법은 등록 시점부터 항목 단위로 진행되므로 항목 입력칸을 받아 그룹으로 생성한다.
+      // 계약: 프로젝트 전체 1건 (최상위, 비그룹 — 항목마다 반복되지 않는 공통 공정)
       await window.api.createProcess({ project_id: newProj.id, name: '계약' });
-      // 사용자 입력 항목명 목록으로 그룹 + 세부공정 생성
+      // 항목 하위 공정은 건진법 분류의 기본 공정 템플릿(설정창에서 편집)을 따른다
+      const subItems = resolveTemplate(catId)?.processes || [];
       const prefixes = getProcItemValues();
       for (const prefix of prefixes) {
         const group = await window.api.createProcess({ project_id: newProj.id, name: prefix, is_group: true });
-        for (const item of GUNJIN_SUB_ITEMS) {
+        for (const item of subItems) {
           await window.api.createProcess({ project_id: newProj.id, name: item, parent_id: group.id });
         }
       }
     } else {
-      const templates = AUTO_PROCESS_TEMPLATES[catName];
-      if (templates) {
-        for (const pname of templates) {
+      // 상위 폴백: 선택한 분류부터 대분류 방향으로 올라가며 첫 템플릿 사용
+      const resolved = resolveTemplate(catId);
+      if (resolved) {
+        for (const pname of resolved.processes) {
           await window.api.createProcess({ project_id: newProj.id, name: pname });
         }
       }
@@ -717,6 +737,7 @@ async function openProjectModal(projectId) {
   teamModalMode  = false;
   currentProjId  = projectId;
   currentGroupId = null; // 드릴인 상태 초기화
+  selectMode     = false; // 묶기 모드 초기화
   const proj = allProjects.find(p => p.id === projectId);
   if (!proj) return;
 
@@ -781,21 +802,53 @@ async function renderProcessList(projectId) {
 
   if (procs.length === 0) {
     container.innerHTML = '<div class="empty-state"><div class="empty-icon">⚙️</div><p>등록된 공정이 없습니다.</p></div>';
-    setGunjinNav(false);
+    setGroupNav(false);
     addBtn.style.display = teamModalMode ? 'none' : '';
+    updateProcToolbar(procs);
     return;
   }
 
-  if (isGunjinProject(projectId)) {
-    renderGunjinView(projectId, procs, container, addBtn);
+  if (usesGroups(procs)) {
+    renderGroupedView(projectId, procs, container, addBtn);
   } else {
-    setGunjinNav(false);
+    setGroupNav(false);
     addBtn.style.display = '';
     container.innerHTML = procs.map(proc => renderProcessItem(proc)).join('');
     attachProcItemEvents(procs, projectId, container);
   }
 
+  updateProcToolbar(procs);
   if (teamModalMode) applyTeamReadOnlyLock(container, addBtn);
+}
+
+// 항목 추가 버튼 + 묶기 툴바 — 최상위에서만, 열람 전용(팀 대시보드)에서는 숨김.
+// 항목 안(드릴인)에서는 항목 추가·묶기가 의미 없다.
+function updateProcToolbar(procs) {
+  const bar = document.getElementById('procToolbar');
+  if (!bar) return;
+  const editableTop = !teamModalMode && !currentGroupId;
+
+  document.getElementById('btnAddGroup').style.display = editableTop ? '' : 'none';
+  bar.style.display = editableTop ? 'flex' : 'none';
+  if (!editableTop) return;
+
+  // 묶을 대상 = 최상위 비그룹 공정. 하나도 없으면 묶기 버튼을 숨긴다.
+  const groupable = procs.filter(p => !p.is_group && !p.parent_id).length;
+  document.getElementById('btnSelectMode').style.display = groupable > 0 ? '' : 'none';
+  document.getElementById('btnSelectMode').textContent   = selectMode ? '묶기 취소' : '☐ 묶기';
+  document.getElementById('btnGroupSelected').style.display = selectMode ? '' : 'none';
+  document.getElementById('procToolbarHint').textContent = selectMode
+    ? '한 항목으로 묶을 공정을 고르세요. (반복되지 않는 공정은 선택하지 마세요)'
+    : '';
+  updateGroupSelectedBtn();
+}
+
+function updateGroupSelectedBtn() {
+  const btn = document.getElementById('btnGroupSelected');
+  if (!btn) return;
+  const n = document.querySelectorAll('#processList .proc-select-cb:checked').length;
+  btn.textContent = `선택 ${n}개를 항목으로 묶기`;
+  btn.disabled = n === 0;
 }
 
 // 팀 진행 현황 대시보드에서 프로젝트를 열람할 때 쓰기 동작을 전부 막는다.
@@ -803,23 +856,24 @@ async function renderProcessList(projectId) {
 function applyTeamReadOnlyLock(container, addBtn) {
   addBtn.style.display = 'none';
   container.querySelectorAll('.proc-status-select, .date-input').forEach(el => { el.disabled = true; });
-  container.querySelectorAll('.btn-del-proc, .btn-cal').forEach(el => { el.style.display = 'none'; });
+  container.querySelectorAll('.btn-del-proc, .btn-cal, .btn-ungroup').forEach(el => { el.style.display = 'none'; });
 }
 
-// 건진법 그룹 네비게이션 바 표시/숨김
-function setGunjinNav(visible, groupName = '') {
+// 항목(그룹) 네비게이션 바 표시/숨김
+function setGroupNav(visible, groupName = '') {
   const nav = document.getElementById('procGroupNav');
   nav.style.display = visible ? 'flex' : 'none';
   if (visible) document.getElementById('procGroupName').textContent = groupName;
 }
 
-// 건진법 전용 뷰 렌더링
-function renderGunjinView(projectId, allProcs, container, addBtn) {
+// 항목(그룹)을 쓰는 프로젝트의 공정 뷰 — 최상위는 그룹 밖 공정 + 항목 목록,
+// 항목 클릭 시 하위 공정으로 드릴인
+function renderGroupedView(projectId, allProcs, container, addBtn) {
   if (currentGroupId) {
     // ── 드릴인: 그룹 세부 항목 ──
     const group    = allProcs.find(p => p.id === currentGroupId);
     const children = allProcs.filter(p => p.parent_id === currentGroupId);
-    setGunjinNav(true, group?.name || '');
+    setGroupNav(true, group?.name || '');
     addBtn.style.display = 'none';
 
     if (children.length === 0) {
@@ -829,44 +883,66 @@ function renderGunjinView(projectId, allProcs, container, addBtn) {
     container.innerHTML = children.map(proc => renderProcessItem(proc)).join('');
     attachProcItemEvents(children, projectId, container);
   } else {
-    // ── 최상위: 계약 + 그룹 목록 ──
-    setGunjinNav(false);
+    // ── 최상위: 그룹 밖 공정(건진법 '계약' 등) + 항목 목록 ──
+    setGroupNav(false);
     addBtn.style.display = '';
     const topLevel = allProcs.filter(p => !p.parent_id);
     container.innerHTML = topLevel.map(proc =>
-      proc.is_group ? renderGunjinGroupItem(proc, allProcs) : renderProcessItem(proc)
+      proc.is_group ? renderGroupItem(proc, allProcs) : renderProcessItem(proc)
     ).join('');
 
-    // 그룹 아이템 클릭 → 드릴인
+    // 그룹 아이템 클릭 → 드릴인 (삭제·풀기 버튼 클릭은 제외)
     container.querySelectorAll('.gunjin-group-item').forEach(item => {
-      item.addEventListener('click', () => {
+      item.addEventListener('click', (e) => {
+        if (e.target.closest('.btn-del-proc, .btn-ungroup')) return;
         currentGroupId = item.dataset.groupId;
         renderProcessList(projectId);
       });
     });
 
-    // 그룹 삭제 (그룹 + 자식 일괄 삭제)
-    container.querySelectorAll('.gunjin-group-item .btn-del-proc').forEach(btn => {
+    // 항목 풀기 — 하위 공정은 최상위로 되돌리고 항목 컨테이너만 제거 (데이터 유지)
+    container.querySelectorAll('.gunjin-group-item .btn-ungroup').forEach(btn => {
       btn.addEventListener('click', async (e) => {
         e.stopPropagation();
-        if (!confirm('이 항목과 하위 공정을 모두 삭제할까요?')) return;
         const gid      = btn.dataset.id;
         const children = allProcs.filter(p => p.parent_id === gid);
-        for (const c of children) await window.api.deleteProcess(c.id);
+        if (!confirm(`이 항목을 풀까요?\n하위 공정 ${children.length}건은 그대로 남고 묶음만 해제됩니다.`)) return;
+        for (const c of children) await window.api.updateProcess(c.id, { parent_id: null });
         await window.api.deleteProcess(gid);
-        await renderProcessList(projectId);
-        allProjects = await window.api.getProjects();
-        renderDashboard();
+        await refreshAfterProcChange(projectId);
+        showToast('항목이 해제됐습니다.');
       });
     });
 
-    // 비그룹 항목(계약 등) 이벤트
+    // 항목 삭제 (항목 + 하위 공정 일괄 삭제)
+    container.querySelectorAll('.gunjin-group-item .btn-del-proc').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const gid      = btn.dataset.id;
+        const children = allProcs.filter(p => p.parent_id === gid);
+        if (!confirm(`이 항목과 하위 공정 ${children.length}건을 모두 삭제할까요?\n공정을 남기려면 '풀기'를 쓰세요.`)) return;
+        for (const c of children) await window.api.deleteProcess(c.id);
+        await window.api.deleteProcess(gid);
+        await refreshAfterProcChange(projectId);
+      });
+    });
+
+    // 그룹 밖 공정 이벤트
     attachProcItemEvents(topLevel.filter(p => !p.is_group), projectId, container);
   }
 }
 
-// 건진법 그룹 아이템 렌더링
-function renderGunjinGroupItem(proc, allProcs) {
+// 공정 변경 후 공통 갱신 — 공정 목록·프로젝트 상태·카드/일정 뷰를 함께 맞춘다
+async function refreshAfterProcChange(projectId) {
+  await renderProcessList(projectId);
+  allProjects = await window.api.getProjects();
+  await preloadProcesses();
+  renderDashboard();
+  if (currentPage === 'schedule') renderSchedule();
+}
+
+// 항목(그룹) 아이템 렌더링
+function renderGroupItem(proc, allProcs) {
   const children = allProcs.filter(p => p.parent_id === proc.id);
   const done     = children.filter(p => p.status === '완료').length;
   const total    = children.length;
@@ -875,7 +951,7 @@ function renderGunjinGroupItem(proc, allProcs) {
   <div class="gunjin-group-item" data-group-id="${proc.id}">
     <div class="gunjin-group-info">
       <span class="gunjin-group-icon">📁</span>
-      <span class="gunjin-group-name">${proc.name}</span>
+      <span class="gunjin-group-name">${escapeHtml(proc.name)}</span>
       <span class="gunjin-group-count">${done}/${total} 완료</span>
       <div class="progress-bar" style="width:80px;margin:0 6px">
         <div class="progress-fill" style="width:${pct}%"></div>
@@ -884,7 +960,8 @@ function renderGunjinGroupItem(proc, allProcs) {
     </div>
     <div class="gunjin-group-actions">
       <span class="gunjin-group-arrow">›</span>
-      <button class="icon-btn del btn-del-proc" data-id="${proc.id}" title="항목 삭제">🗑</button>
+      <button class="icon-btn btn-ungroup" data-id="${proc.id}" title="항목 풀기 (하위 공정은 유지)">⛓</button>
+      <button class="icon-btn del btn-del-proc" data-id="${proc.id}" title="항목 삭제 (하위 공정도 함께 삭제)">🗑</button>
     </div>
   </div>`;
 }
@@ -933,6 +1010,10 @@ function attachProcItemEvents(procs, projectId, container) {
     });
   });
 
+  container.querySelectorAll('.proc-select-cb').forEach(cb => {
+    cb.addEventListener('change', updateGroupSelectedBtn);
+  });
+
   container.querySelectorAll('.btn-del-proc').forEach(btn => {
     if (btn.closest('.gunjin-group-item')) return; // 그룹 삭제는 위에서 처리
     btn.addEventListener('click', async () => {
@@ -973,10 +1054,16 @@ function renderProcessItem(proc) {
     ? dateField('실시일자', 'actual_start', proc.actual_start)
     : dateField('실시 시작', 'actual_start', proc.actual_start) + dateField('실시 종료', 'actual_end', proc.actual_end);
 
+  // 묶기 모드에서는 최상위 공정 앞에 체크박스를 붙인다 (그룹 안 공정은 이미 묶여 있으므로 제외)
+  const selectCb = (selectMode && !proc.parent_id && !currentGroupId)
+    ? `<input type="checkbox" class="proc-select-cb" data-id="${proc.id}" title="항목으로 묶을 공정 선택">`
+    : '';
+
   return `
   <div class="process-item" id="proc-${proc.id}">
     <div class="proc-header">
-      <div class="proc-name">${proc.name}</div>
+      ${selectCb}
+      <div class="proc-name">${escapeHtml(proc.name)}</div>
       <div class="proc-mode-toggle" data-proc-id="${proc.id}">
         <button class="proc-mode-btn${mode === 'short' ? ' active' : ''}" data-mode="short">단기</button>
         <button class="proc-mode-btn${mode === 'long'  ? ' active' : ''}" data-mode="long">장기</button>
@@ -1009,40 +1096,104 @@ function setDateType(type) {
 document.getElementById('btnDateShort').addEventListener('click', () => setDateType('short'));
 document.getElementById('btnDateLong').addEventListener('click',  () => setDateType('long'));
 
-// 건진법 목록으로 돌아가기
+// 항목 목록으로 돌아가기
 document.getElementById('btnBackToGroup').addEventListener('click', () => {
   currentGroupId = null;
   renderProcessList(currentProjId);
 });
 
-// 건진법 그룹 추가 다이얼로그
+// ── 묶기 모드 ──────────────────────────────────────────────
+document.getElementById('btnSelectMode').addEventListener('click', () => {
+  selectMode = !selectMode;
+  renderProcessList(currentProjId);
+});
+
+// ── 항목 다이얼로그 ────────────────────────────────────────
+// 두 가지 모드를 한 다이얼로그로 쓴다.
+//  'create' — 새 항목 + 하위 공정을 새로 생성 (분류 기본 공정으로 미리 채움)
+//  'wrap'   — 이미 있는 공정들을 새 항목 밑으로 옮김 (항목명만 입력)
+// 항목명 입력에 window.prompt를 쓰면 안 된다 — Electron이 지원하지 않아 예외로 죽는다.
+let groupDialogMode = 'create';
+let wrapTargetIds   = [];
+
+function openGroupDialog(mode, ids = []) {
+  groupDialogMode = mode;
+  wrapTargetIds   = ids;
+  const isWrap = mode === 'wrap';
+
+  document.getElementById('groupDialogTitle').textContent = isWrap ? '선택 공정 묶기' : '항목 추가';
+  document.getElementById('btnGunjinGroupSave').textContent = isWrap ? '묶기' : '추가';
+  document.getElementById('dlgGunjinGroupName').value = '';
+  document.getElementById('dlgGroupProcsGroup').style.display = isWrap ? 'none' : '';
+
+  const wrapHint = document.getElementById('dlgGroupWrapHint');
+  wrapHint.style.display = isWrap ? '' : 'none';
+  if (isWrap) {
+    wrapHint.textContent = `선택한 공정 ${ids.length}건이 이 항목 밑으로 들어갑니다. (공정과 날짜는 그대로 유지)`;
+  } else {
+    const tpl = groupTemplateFor(currentProjId);
+    document.getElementById('dlgGroupProcs').value = tpl.join('\n');
+    document.getElementById('dlgGroupProcsHint').textContent = tpl.length
+      ? `⚡ ${getCategoryBreadcrumb(allProjects.find(p => p.id === currentProjId)?.category_id)} 분류의 기본 공정을 불러왔습니다. 이 항목에 맞게 고치세요.`
+      : '이 분류에는 기본 공정이 없습니다. 설정 › 분류 관리에서 지정하거나 여기에 직접 입력하세요.';
+  }
+  openDialog('gunjinGroupDialog');
+}
+
+// 선택한 공정들을 새 항목으로 묶기
+document.getElementById('btnGroupSelected').addEventListener('click', () => {
+  const ids = [...document.querySelectorAll('#processList .proc-select-cb:checked')].map(cb => cb.dataset.id);
+  if (!ids.length) return;
+  openGroupDialog('wrap', ids);
+});
+
+document.getElementById('btnAddGroup').addEventListener('click', () => openGroupDialog('create'));
 document.getElementById('btnGunjinGroupCancel').addEventListener('click', () => closeDialog('gunjinGroupDialog'));
+
 document.getElementById('btnGunjinGroupSave').addEventListener('click', async () => {
   const name = document.getElementById('dlgGunjinGroupName').value.trim();
   if (!name) { alert('항목명을 입력하세요.'); return; }
+
+  if (groupDialogMode === 'wrap') {
+    const ids = wrapTargetIds;
+    if (!ids.length) { closeDialog('gunjinGroupDialog'); return; }
+    const procs = processCache[currentProjId] || [];
+    // 새 항목은 묶는 공정 중 가장 앞 순서 자리에 놓아 목록에서 원래 위치를 유지한다
+    const orders = procs.filter(p => ids.includes(p.id)).map(p => p.order_index ?? 0);
+    const group  = await window.api.createProcess({
+      project_id: currentProjId, name, is_group: true,
+      order_index: orders.length ? Math.min(...orders) : undefined,
+    });
+    for (const id of ids) {
+      await window.api.updateProcess(id, { parent_id: group.id });
+    }
+    selectMode = false;
+    closeDialog('gunjinGroupDialog');
+    await refreshAfterProcChange(currentProjId);
+    showToast(`공정 ${ids.length}건을 "${name}" 항목으로 묶었습니다.`);
+    return;
+  }
+
+  const subItems = parseProcLines(document.getElementById('dlgGroupProcs').value);
+  if (!subItems.length) { alert('하위 공정을 한 줄에 하나씩 입력하세요.'); return; }
   const group = await window.api.createProcess({ project_id: currentProjId, name, is_group: true });
-  for (const item of GUNJIN_SUB_ITEMS) {
+  for (const item of subItems) {
     await window.api.createProcess({ project_id: currentProjId, name: item, parent_id: group.id });
   }
   closeDialog('gunjinGroupDialog');
-  await renderProcessList(currentProjId);
-  allProjects = await window.api.getProjects();
-  await preloadProcesses();
-  renderDashboard();
+  await refreshAfterProcChange(currentProjId);
   showToast(`"${name}" 항목이 추가됐습니다.`);
 });
 document.getElementById('gunjinGroupDialog').addEventListener('click', (e) => {
   if (e.target === e.currentTarget) closeDialog('gunjinGroupDialog');
 });
+// 묶기 모드는 입력칸이 항목명 하나뿐이라 Enter로 바로 확정되게 한다
+document.getElementById('dlgGunjinGroupName').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); document.getElementById('btnGunjinGroupSave').click(); }
+});
 
 document.getElementById('btnAddProcess').addEventListener('click', () => {
-  // 건진법 최상위: 그룹 추가 다이얼로그
-  if (isGunjinProject(currentProjId) && !currentGroupId) {
-    document.getElementById('dlgGunjinGroupName').value = '';
-    openDialog('gunjinGroupDialog');
-    return;
-  }
-  // 일반 공정 추가
+  // 공정 추가
   document.getElementById('dlgProcName').value    = '';
   document.getElementById('dlgPlanStart').value   = '';
   document.getElementById('dlgPlanEnd').value     = '';
@@ -1355,7 +1506,7 @@ function buildProjGroup(proj, procs, weeks, firstDay, todayISO) {
   const procRows = document.createElement('div');
   procRows.className = 'sched-proc-rows';
 
-  if (isGunjinProject(proj.id)) {
+  if (usesGroups(procs)) {
     procs.filter(p => !p.parent_id && !p.is_group && hasBarInWindow(p, firstDay)).forEach(p =>
       procRows.appendChild(buildProcRow(p, weeks, firstDay, todayISO, proj.id)));
     procs.filter(p => p.is_group).forEach(grpProc => {
@@ -1483,7 +1634,7 @@ async function renderSchedule() {
   const schedProjects = searchFiltered.filter(p => {
     if (p.status === '완료' || p.status === '청구완료') return false;
     const procs = processCache[p.id] || [];
-    if (isGunjinProject(p.id)) {
+    if (usesGroups(procs)) {
       const topVis   = procs.some(q => !q.parent_id && !q.is_group && hasBarInWindow(q, firstDay));
       const childVis = procs.some(q => q.parent_id && hasBarInWindow(q, firstDay));
       return topVis || childVis;
@@ -1566,9 +1717,9 @@ async function renderBriefing() {
   const groups = [];
   for (const proj of activeProjects) {
     const procs  = processCache[proj.id] || await window.api.getProcesses(proj.id);
-    const gunjin = isGunjinProject(proj.id);
+    const grouped = usesGroups(procs);
 
-    if (gunjin) {
+    if (grouped) {
       const topProcs     = procs.filter(p => !p.is_group && !p.parent_id && inThisWeek(p));
       const gunjinGroups = [];
       for (const grp of procs.filter(p => p.is_group)) {
@@ -1876,26 +2027,33 @@ function renderCategoryTree() {
     return;
   }
 
+  // 공정 템플릿은 팀 전체가 공유하는 값이므로 admin만 편집한다.
+  // (분류 트리를 클라우드에 올리는 것도 admin으로 제한돼 있어 같은 기준을 따른다)
+  const canEditTpl = currentUserRole === 'admin';
+  const tplBtn = (cat, title) => {
+    if (!canEditTpl) return '';
+    const own = Array.isArray(cat.template_processes) ? cat.template_processes.length : 0;
+    return `<button class="btn-cat-template" data-id="${cat.id}" data-name="${escapeHtml(cat.name)}" title="${title}">공정템플릿 ✎${own ? ` <span class="cat-tpl-count">${own}</span>` : ''}</button>`;
+  };
+
   tree.innerHTML = level1.map(cat => {
     const children = allCategories.filter(c => c.parent_id === cat.id).sort((a,b) => a.order_index - b.order_index);
     return `
       <div class="cat-l1">
         <div class="cat-l1-header">
           <span class="cat-l1-name">▸ ${cat.name}</span>
+          ${tplBtn(cat, '기본 공정 관리')}
           <button class="icon-btn btn-cat-add" data-parent="${cat.id}" title="중분류 추가">＋</button>
           <button class="icon-btn del btn-cat-del" data-id="${cat.id}" title="대분류 삭제">🗑</button>
         </div>
         <div class="cat-l2">
-          ${children.map(c2 => {
-            const tplCount = allCategories.filter(c => c.parent_id === c2.id && c.level === 3).length;
-            return `
+          ${children.map(c2 => `
             <div class="cat-l2-item">
               <span class="cat-l2-name">${c2.name}</span>
-              <button class="btn-cat-template" data-id="${c2.id}" data-name="${c2.name}" title="소분류·공정템플릿 관리">공정템플릿 ✎${tplCount ? ` <span class="cat-tpl-count">${tplCount}</span>` : ''}</button>
+              ${tplBtn(c2, '기본 공정·소분류 관리')}
               <button class="icon-btn del btn-cat-del" data-id="${c2.id}" title="중분류 삭제">🗑</button>
             </div>
-          `;
-          }).join('')}
+          `).join('')}
           <div class="cat-add-btn btn-cat-add" data-parent="${cat.id}">+ 중분류 추가</div>
         </div>
       </div>`;
@@ -1929,17 +2087,31 @@ document.getElementById('btnCatDlgSave').addEventListener('click', async () => {
   showToast(`"${name}" 분류가 추가되었습니다.`);
 });
 
-// ─── 공정 템플릿 패널 (소분류 level 3 + template_processes) ──
-let tplCurrentCat2Id = null;   // 현재 패널이 연 중분류 ID
+// ─── 공정 템플릿 패널 (분류 자신의 template_processes + 소분류 관리) ──
+let tplCurrentCatId  = null;   // 현재 패널이 연 분류 ID (대분류 or 중분류)
 let tplSelectedCat3Id = null;  // 편집 중인 소분류 ID (null = 미선택)
 
-function openTemplatePanel(cat2Id, cat2Name) {
-  tplCurrentCat2Id  = cat2Id;
+function openTemplatePanel(catId, catName) {
+  tplCurrentCatId   = catId;
   tplSelectedCat3Id = null;
-  document.getElementById('tplCat2Id').value = cat2Id;
-  document.getElementById('templatePanelTitle').textContent = `공정 템플릿 — ${cat2Name}`;
+  const cat = allCategories.find(c => c.id === catId);
+  document.getElementById('tplCatId').value = catId;
+  document.getElementById('templatePanelTitle').textContent = `공정 템플릿 — ${catName}`;
+
+  // 이 분류 자신의 기본 공정
+  const own = Array.isArray(cat?.template_processes) ? cat.template_processes : [];
+  document.getElementById('tplOwnText').value = own.join('\n');
+  document.getElementById('tplOwnLabel').textContent = `이 분류의 기본 공정 — ${catName}`;
+  document.getElementById('tplOwnHint').textContent = (catName === '건진법')
+    // 건진법은 등록 시점부터 항목 단위로 진행되므로 템플릿이 항목 하위 공정이 된다.
+    ? '⚡ 건진법은 프로젝트 등록 시 입력한 항목마다 위 공정이 하위 공정으로 생성됩니다. (계약은 항목 밖에 별도 생성)'
+    : '⚡ 이 분류(및 템플릿이 없는 하위 분류)로 프로젝트 등록 시 위 공정이 순서대로 자동 생성됩니다. 항목을 추가할 때 하위 공정 기본값으로도 쓰입니다. 비우면 자동생성 없음.';
+
+  // 소분류 관리 섹션은 중분류에서만 (대분류의 자식은 중분류이므로 분류 트리에서 관리)
+  const isLevel2 = cat?.level === 2;
+  document.getElementById('tplSubSection').style.display = isLevel2 ? '' : 'none';
   document.getElementById('tplSubName').value = '';
-  renderTemplateSubList();
+  if (isLevel2) renderTemplateSubList();
   hideTemplateProcEditor();
   openDialog('templatePanel');
 }
@@ -1948,7 +2120,7 @@ function renderTemplateSubList() {
   const listEl = document.getElementById('tplSubList');
   if (!listEl) return;
   const subs = allCategories
-    .filter(c => c.parent_id === tplCurrentCat2Id && c.level === 3)
+    .filter(c => c.parent_id === tplCurrentCatId && c.level === 3)
     .sort((a, b) => (a.order_index || 0) - (b.order_index || 0));
 
   if (subs.length === 0) {
@@ -1959,10 +2131,15 @@ function renderTemplateSubList() {
   listEl.innerHTML = subs.map(c3 => {
     const count = Array.isArray(c3.template_processes) ? c3.template_processes.length : 0;
     const active = c3.id === tplSelectedCat3Id ? ' active' : '';
+    // 자체 템플릿이 없으면 상위 분류의 기본 공정으로 폴백된다 — 어디를 쓰는지 표시
+    const inherited = count ? null : resolveTemplate(c3.id);
+    const label = count ? `공정 ${count}`
+                : inherited ? `${escapeHtml(inherited.source.name)} 기본 공정 (${inherited.processes.length})`
+                : '템플릿 없음';
     return `
       <div class="tpl-sub-item${active}" data-id="${c3.id}" data-name="${escapeHtml(c3.name)}">
         <span class="tpl-sub-name">${escapeHtml(c3.name)}</span>
-        <span class="tpl-sub-count">${count ? `공정 ${count}` : '템플릿 없음'}</span>
+        <span class="tpl-sub-count">${label}</span>
         <button class="icon-btn del btn-tpl-sub-del" data-id="${c3.id}" title="소분류 삭제">🗑</button>
       </div>`;
   }).join('');
@@ -1995,7 +2172,6 @@ function selectTemplateSub(cat3Id, cat3Name) {
   const cat3 = allCategories.find(c => c.id === cat3Id);
   const procs = Array.isArray(cat3?.template_processes) ? cat3.template_processes : [];
   document.getElementById('tplProcGroup').style.display = '';
-  document.getElementById('btnTplProcSave').style.display = '';
   document.getElementById('tplProcLabel').textContent = `공정 템플릿 — ${cat3Name}`;
   document.getElementById('tplProcText').value = procs.join('\n');
   renderTemplateSubList(); // active 표시 갱신
@@ -2004,7 +2180,6 @@ function selectTemplateSub(cat3Id, cat3Name) {
 function hideTemplateProcEditor() {
   tplSelectedCat3Id = null;
   document.getElementById('tplProcGroup').style.display = 'none';
-  document.getElementById('btnTplProcSave').style.display = 'none';
   document.getElementById('tplProcText').value = '';
 }
 
@@ -2013,7 +2188,7 @@ document.getElementById('btnTplSubAdd').addEventListener('click', async () => {
   const input = document.getElementById('tplSubName');
   const name  = input.value.trim();
   if (!name) { alert('소분류 이름을 입력하세요.'); return; }
-  await window.api.createCategory({ parent_id: tplCurrentCat2Id, level: 3, name });
+  await window.api.createCategory({ parent_id: tplCurrentCatId, level: 3, name });
   allCategories = await window.api.getCategories();
   input.value = '';
   renderTemplateSubList();
@@ -2025,17 +2200,31 @@ document.getElementById('tplSubName').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') { e.preventDefault(); document.getElementById('btnTplSubAdd').click(); }
 });
 
-// 공정 템플릿 저장
+// 이 분류 자신의 기본 공정 저장
+document.getElementById('btnTplOwnSave').addEventListener('click', async () => {
+  if (!tplCurrentCatId) return;
+  const lines = parseProcLines(document.getElementById('tplOwnText').value);
+  await window.api.updateCategory(tplCurrentCatId, { template_processes: lines });
+  allCategories = await window.api.getCategories();
+  if (document.getElementById('tplSubSection').style.display !== 'none') renderTemplateSubList();
+  renderCategoryTree();
+  showToast(lines.length ? '기본 공정이 저장되었습니다.' : '기본 공정이 해제되었습니다.');
+});
+
+// 소분류 공정 템플릿 저장
 document.getElementById('btnTplProcSave').addEventListener('click', async () => {
   if (!tplSelectedCat3Id) return;
-  const lines = document.getElementById('tplProcText').value
-    .split('\n').map(s => s.trim()).filter(s => s !== '');
+  const lines = parseProcLines(document.getElementById('tplProcText').value);
   await window.api.updateCategory(tplSelectedCat3Id, { template_processes: lines });
   allCategories = await window.api.getCategories();
   renderTemplateSubList();
   renderCategoryTree();
   showToast('공정 템플릿이 저장되었습니다.');
 });
+
+function parseProcLines(text) {
+  return text.split('\n').map(s => s.trim()).filter(s => s !== '');
+}
 
 document.getElementById('btnTplPanelClose').addEventListener('click', () => closeDialog('templatePanel'));
 
@@ -2265,6 +2454,7 @@ async function openTeamProjectModal(project) {
   teamModalMode  = true;
   currentProjId  = project.id;
   currentGroupId = null; // 드릴인 상태 초기화
+  selectMode     = false; // 묶기 모드 초기화
 
   document.getElementById('modalProjName').textContent = project.name;
   document.getElementById('modalProjCat').textContent  = getCategoryBreadcrumb(project.category_id);
@@ -2597,9 +2787,9 @@ async function renderCompletedWork() {
   for (const proj of allProjects) {
     const procs  = processCache[proj.id] || await window.api.getProcesses(proj.id);
     processCache[proj.id] = procs;
-    const gunjin = isGunjinProject(proj.id);
+    const grouped = usesGroups(procs);
 
-    if (gunjin) {
+    if (grouped) {
       const topCompleted = procs
         .filter(p => !p.is_group && !p.parent_id && p.status === '완료')
         .filter(p => matchCompletedFilter(p, proj, searchVal, dateFrom, dateTo));

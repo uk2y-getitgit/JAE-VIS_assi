@@ -591,9 +591,18 @@
       <div id="modal-tab-processes" class="modal-section">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
           <div class="section-title" style="margin:0">공정 단계</div>
-          <button class="btn-primary" style="font-size:10px;padding:6px 12px" id="btnAddProcess">+ 공정 추가</button>
+          <div style="display:flex;gap:6px;align-items:center">
+            <button class="btn-secondary" style="font-size:10px;padding:6px 12px" id="btnAddGroup">+ 항목 추가</button>
+            <button class="btn-primary" style="font-size:10px;padding:6px 12px" id="btnAddProcess">+ 공정 추가</button>
+          </div>
         </div>
-        <!-- 건진법 그룹 드릴인 네비게이션 -->
+        <!-- 묶기 모드 툴바 — 기존 공정을 항목으로 묶을 때 -->
+        <div id="procToolbar">
+          <button class="btn-secondary" style="font-size:11px;padding:5px 12px" id="btnSelectMode">☐ 묶기</button>
+          <button class="btn-primary" style="font-size:11px;padding:5px 12px;display:none" id="btnGroupSelected">선택 0개를 항목으로 묶기</button>
+          <span id="procToolbarHint"></span>
+        </div>
+        <!-- 항목(그룹) 드릴인 네비게이션 -->
         <div id="procGroupNav">
           <button class="btn-secondary" style="font-size:11px;padding:5px 12px" id="btnBackToGroup">← 목록으로</button>
           <span id="procGroupName"></span>
@@ -737,13 +746,19 @@
 <!-- ── 건진법 항목(그룹) 추가 다이얼로그 ─────────────────── -->
 <div class="dialog-overlay" id="gunjinGroupDialog">
   <div class="dialog-box" style="min-width:380px">
-    <div class="dialog-title">항목 추가</div>
+    <div class="dialog-title" id="groupDialogTitle">항목 추가</div>
     <div class="form-group">
       <label class="form-label">항목명 *</label>
-      <input type="text" class="form-input" id="dlgGunjinGroupName" placeholder="예: 항타기2차, 옹벽공사...">
-      <div style="font-size:11px;color:var(--text-muted);margin-top:6px">
-        ⚡ 현장점검 · 보고서작성 · 제출 · 제본 · 청구가 자동 생성됩니다
-      </div>
+      <input type="text" class="form-input" id="dlgGunjinGroupName" placeholder="예: 하반기, 보완작성, 항타기2차...">
+      <div id="dlgGroupWrapHint" style="font-size:11px;color:var(--text-muted);margin-top:6px;display:none"></div>
+    </div>
+    <div class="form-group" id="dlgGroupProcsGroup">
+      <label class="form-label" style="text-transform:none;letter-spacing:0">
+        <span style="font-size:11px;font-weight:600;color:var(--text-sec);text-transform:uppercase;letter-spacing:0.04em">하위 공정</span>
+        <span style="font-size:10px;color:var(--text-muted);font-weight:400;margin-left:6px">한 줄에 공정 하나씩</span>
+      </label>
+      <textarea class="form-textarea" id="dlgGroupProcs" style="min-height:130px;font-size:13px;line-height:1.6" placeholder="예:&#10;현장점검&#10;보고서작성&#10;제출&#10;제본&#10;청구"></textarea>
+      <div id="dlgGroupProcsHint" style="font-size:11px;color:var(--text-muted);margin-top:6px"></div>
     </div>
     <div class="dialog-actions">
       <button class="btn-secondary" id="btnGunjinGroupCancel">취소</button>
@@ -795,37 +810,58 @@
   </div>
 </div>
 
-<!-- ── 공정 템플릿 패널 (소분류 + 공정 템플릿 편집) ──────── -->
+<!-- ── 공정 템플릿 패널 (분류 자신의 기본 공정 + 소분류별 공정 템플릿 편집) ──────── -->
 <div class="dialog-overlay" id="templatePanel">
   <div class="dialog-box" style="min-width:460px">
     <div class="dialog-title" id="templatePanelTitle">공정 템플릿</div>
-    <input type="hidden" id="tplCat2Id">
+    <input type="hidden" id="tplCatId">
+
+    <!-- 열어놓은 분류 자신의 기본 공정 -->
     <div class="form-group">
-      <label class="form-label">소분류 목록</label>
-      <div class="tpl-sub-list" id="tplSubList">
-        <!-- JS로 렌더링 -->
-      </div>
-    </div>
-    <div class="form-group">
-      <label class="form-label">소분류 추가</label>
-      <div class="tpl-sub-add">
-        <input type="text" class="form-input" id="tplSubName" placeholder="소분류 이름 입력">
-        <button class="btn-primary" id="btnTplSubAdd" style="font-size:12px;padding:8px 14px;white-space:nowrap">추가</button>
-      </div>
-    </div>
-    <div class="form-group" id="tplProcGroup" style="display:none">
       <label class="form-label" style="text-transform:none;letter-spacing:0">
-        <span id="tplProcLabel" style="font-size:11px;font-weight:600;color:var(--text-sec);text-transform:uppercase;letter-spacing:0.04em">공정 템플릿</span>
+        <span id="tplOwnLabel" style="font-size:11px;font-weight:600;color:var(--text-sec);text-transform:uppercase;letter-spacing:0.04em">이 분류의 기본 공정</span>
         <span style="font-size:10px;color:var(--text-muted);font-weight:400;margin-left:6px">한 줄에 공정 하나씩</span>
       </label>
-      <textarea class="form-textarea" id="tplProcText" style="min-height:150px;font-size:13px;line-height:1.6" placeholder="예:&#10;자료요청&#10;보고서작성&#10;제출&#10;제본&#10;청구"></textarea>
-      <div style="font-size:11px;color:var(--text-muted);margin-top:6px">
-        ⚡ 이 소분류로 프로젝트 등록 시 위 공정이 순서대로 자동 생성됩니다
+      <textarea class="form-textarea" id="tplOwnText" style="min-height:130px;font-size:13px;line-height:1.6" placeholder="예:&#10;자료요청&#10;보고서작성&#10;제출&#10;제본&#10;청구"></textarea>
+      <div id="tplOwnHint" style="font-size:11px;color:var(--text-muted);margin-top:6px"></div>
+      <div style="margin-top:8px">
+        <button class="btn-primary" id="btnTplOwnSave" style="font-size:12px;padding:8px 14px">기본 공정 저장</button>
       </div>
     </div>
+
+    <!-- 소분류 관리 — 중분류를 열었을 때만 노출 -->
+    <div id="tplSubSection">
+      <div class="form-group">
+        <label class="form-label">소분류 목록</label>
+        <div class="tpl-sub-list" id="tplSubList">
+          <!-- JS로 렌더링 -->
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">소분류 추가</label>
+        <div class="tpl-sub-add">
+          <input type="text" class="form-input" id="tplSubName" placeholder="소분류 이름 입력">
+          <button class="btn-primary" id="btnTplSubAdd" style="font-size:12px;padding:8px 14px;white-space:nowrap">추가</button>
+        </div>
+      </div>
+      <div class="form-group" id="tplProcGroup" style="display:none">
+        <label class="form-label" style="text-transform:none;letter-spacing:0">
+          <span id="tplProcLabel" style="font-size:11px;font-weight:600;color:var(--text-sec);text-transform:uppercase;letter-spacing:0.04em">공정 템플릿</span>
+          <span style="font-size:10px;color:var(--text-muted);font-weight:400;margin-left:6px">한 줄에 공정 하나씩</span>
+        </label>
+        <textarea class="form-textarea" id="tplProcText" style="min-height:150px;font-size:13px;line-height:1.6" placeholder="예:&#10;자료요청&#10;보고서작성&#10;제출&#10;제본&#10;청구"></textarea>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:6px">
+          ⚡ 이 소분류로 프로젝트 등록 시 위 공정이 순서대로 자동 생성됩니다.
+          비워두면 상위 분류의 기본 공정을 사용합니다.
+        </div>
+        <div style="margin-top:8px">
+          <button class="btn-primary" id="btnTplProcSave" style="font-size:12px;padding:8px 14px">공정 템플릿 저장</button>
+        </div>
+      </div>
+    </div>
+
     <div class="dialog-actions">
       <button class="btn-secondary" id="btnTplPanelClose">닫기</button>
-      <button class="btn-primary" id="btnTplProcSave" style="display:none">공정 템플릿 저장</button>
     </div>
   </div>
 </div>

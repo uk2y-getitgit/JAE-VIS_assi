@@ -766,6 +766,18 @@ nav { flex: 1; padding: 0 8px; display: flex; flex-direction: column; gap: 1px; 
 }
 #procGroupName { font-size: 14px; font-weight: 700; color: var(--text); }
 
+/* 묶기 모드 툴바 */
+#procToolbar {
+  display: none; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+#procToolbarHint { font-size: 11px; color: var(--text-muted); }
+#btnGroupSelected:disabled { opacity: .45; cursor: default; }
+.proc-select-cb {
+  width: 15px; height: 15px; flex-shrink: 0; cursor: pointer;
+  accent-color: var(--accent); -webkit-app-region: no-drag;
+}
+
 .gunjin-group-item {
   background: var(--bg-card); border: 1px solid var(--border);
   border-radius: var(--radius-lg); padding: 12px 14px;

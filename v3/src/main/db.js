@@ -119,6 +119,29 @@ function initializeData() {
     store.set('quickMemos', migrated);
     store.set('quickMemosV3', true);
   }
+  // 공정 자동생성 템플릿 마이그레이션 — 렌더러에 하드코딩돼 있던 분류별 기본 공정을
+  // 카테고리 데이터로 이관. 이후로는 설정창에서 사용자가 직접 수정한다.
+  // 템플릿 = "이 분류의 1회분 공정 세트". 프로젝트 등록 시 자동생성에 쓰이고,
+  // 항목(그룹)을 추가할 때 하위 공정의 기본값으로도 쓰인다.
+  // 검토·기타는 기본값 없이 비워두고 사용자가 설정창에서 채운다.
+  // cat_21(건진법)은 항상 항목 단위로 진행되므로 이 목록이 항목의 하위 공정이 된다.
+  if (!store.get('catTemplatesV2')) {
+    const seed = {
+      cat_01: ['자료요청', '보고서작성', '제출', '제본', '청구'],                          // 계획서
+      cat_21: ['현장점검', '보고서작성', '제출', '제본', '청구'],                          // 건진법 (항목 하위 공정)
+      cat_22: ['착수 및 계약', '현장점검', '보고서작성', '제출', '제본', '준공 및 청구'],  // 시특법
+      cat_23: ['계약', '현장점검', '보고서작성', '제출', '제본', '청구'],                  // 관리법
+    };
+    store.set('categories', store.get('categories', []).map(c =>
+      // 이미 템플릿이 있으면 건드리지 않는다 (사용자 편집분·클라우드에서 내려받은 값 보호)
+      (seed[c.id] && !Array.isArray(c.template_processes))
+        ? { ...c, template_processes: seed[c.id] }
+        : c
+    ));
+    store.set('catTemplatesV1', true);
+    store.set('catTemplatesV2', true);
+  }
+
   const currentSettings = store.get('settings', {});
   // 'jarvis' 테마 → 'dark'로 마이그레이션
   if (currentSettings.theme === 'jarvis' || !currentSettings.theme) {
@@ -221,8 +244,8 @@ const projects = {
   getById: (id) => store.get('projects', []).find(p => p.id === id),
 
   // 프로젝트 상태 자동 계산 (공정 데이터 기반)
-  // - 건진법 그룹 컨테이너(is_group)는 상태가 '대기' 고정이므로 집계에서 제외.
-  //   (제외하지 않으면 그룹을 쓰는 프로젝트는 영원히 '완료'가 되지 않음)
+  // - 항목(그룹) 컨테이너(is_group)는 상태가 '대기' 고정이므로 집계에서 제외.
+  //   (제외하지 않으면 항목을 쓰는 프로젝트는 영원히 '완료'가 되지 않음)
   // - 수동 지정한 '청구완료' 또는 manually_completed=true인 '완료'는 자동 계산이 덮어쓰지 않음.
   calcStatus: (projectId) => {
     const cur = projects.getById(projectId);
@@ -300,8 +323,8 @@ const processes = {
       id: generateId('proc'),
       project_id: data.project_id,
       name: data.name,
-      parent_id: data.parent_id || null,   // 건진법 그룹 자식용
-      is_group: data.is_group || false,     // 건진법 그룹 컨테이너
+      parent_id: data.parent_id || null,   // 항목(그룹) 자식용
+      is_group: data.is_group || false,     // 항목(그룹) 컨테이너
       order_index: data.order_index ?? projectProcs.length,
       plan_start: data.plan_start || null,
       plan_end: data.plan_end || null,
