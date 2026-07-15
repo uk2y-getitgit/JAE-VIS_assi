@@ -12,6 +12,17 @@ function setCurrentUser(name) {
 }
 function getCurrentUser()     { return currentUsername; }
 
+// 분류(카테고리) 트리는 팀 전체가 공유하는 값이라 관리자만 고칠 수 있다.
+// 렌더러에서 설정 화면의 분류 관리 카드를 숨기지만, 화면을 숨기는 것은 방어가 아니므로
+// 실제 쓰기 경로인 여기서 막는다. (create/update/delete는 그대로 클라우드에 반영되고,
+// 소분류는 PC마다 랜덤 ID로 생성되므로 팀원 PC가 손대면 팀 전체 분류가 깨진다.)
+function assertCategoryAdmin() {
+  const role = db.users.find(currentUsername)?.role;
+  if (role !== 'admin') {
+    throw new Error('분류 관리는 관리자만 할 수 있습니다.');
+  }
+}
+
 // 로컬 데이터 전체 → Supabase 업로드 (cloud-migrate 핸들러와 로그인 시 자동 재동기화가 공유)
 async function syncLocalDataToCloud(username) {
   const s = db.settings.get();
@@ -167,17 +178,20 @@ function setupIpcHandlers() {
   // ─── 카테고리 ─────────────────────────────────────────────
   ipcMain.handle('get-categories', () => db.categories.getAll());
   ipcMain.handle('create-category', (_, data) => {
+    assertCategoryAdmin();
     const result = db.categories.create(data);
     fireSync(() => cloud.sync.category(result));
     return result;
   });
   ipcMain.handle('update-category', (_, id, data) => {
+    assertCategoryAdmin();
     db.categories.update(id, data);
     const updated = db.categories.getAll().find(c => c.id === id);
     if (updated) fireSync(() => cloud.sync.category(updated));
     return true;
   });
   ipcMain.handle('delete-category', (_, id) => {
+    assertCategoryAdmin();
     db.categories.delete(id);
     fireSync(() => cloud.sync.deleteCategory(id));
     return true;

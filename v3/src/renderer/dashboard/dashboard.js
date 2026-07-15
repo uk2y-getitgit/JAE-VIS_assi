@@ -61,6 +61,11 @@ window.api.onSetUser(async (username, role) => {
   document.getElementById('sidebarUser').textContent = username;
   document.querySelectorAll('.nav-item[data-page="team"], .nav-item[data-page="team-progress"]')
     .forEach(el => { el.style.display = (currentUserRole === 'admin') ? '' : 'none'; });
+  // 분류 관리는 관리자 전용 — 분류 추가·삭제는 클라우드에 그대로 반영되므로(그리고
+  // 소분류는 PC마다 랜덤 ID로 생성되므로) 팀원 PC에서 손대면 팀 전체 분류가 깨진다.
+  // 화면을 숨기는 것만으로는 방어가 안 되므로 main 쪽 IPC에도 같은 가드가 있다.
+  const catCol = document.getElementById('settingsCatCol');
+  if (catCol) catCol.style.display = (currentUserRole === 'admin') ? '' : 'none';
   await loadAll();
 });
 
