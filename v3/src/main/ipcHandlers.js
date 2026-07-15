@@ -228,6 +228,14 @@ async function syncLocalDataToCloud(username) {
 function autoResyncOnLogin(username) {
   setTimeout(() => {
     if (!cloud.isReady()) return;
+    // 로스터 캐치업: 로그인한 본인을 team_members에 올린다.
+    // 등록 시점에 클라우드가 아직 연결되지 않았거나(오프라인/연결 전 가입),
+    // 로스터 동기화가 없던 구버전으로 가입한 팀원은 클라우드 로스터에 빠져 있어
+    // 관리자 화면에 영영 나타나지 않는다. upsert(id 기준)라 매번 올려도 안전하다.
+    const me = db.users.find(username);
+    if (me) {
+      fireSync(() => cloud.sync.teamMember({ id: me.id, name: me.name, role: me.role || 'member' }));
+    }
     syncLocalDataToCloud(username).catch(e =>
       console.error('[Supabase 자동 재동기화]', e.message));
   }, 2000);
@@ -283,7 +291,14 @@ function setupIpcHandlers() {
 
   // ─── 사용자 ───────────────────────────────────────────────
   ipcMain.handle('get-users',   () => db.users.getAll());
-  ipcMain.handle('create-user', (_, name, pin) => db.users.create(name, pin));
+  // 로그인 화면 "신규 등록" — 관리자가 만들어주지 않은 팀원이 직접 가입하는 경로.
+  // 이 경로도 반드시 클라우드 로스터에 올려야 한다. 올리지 않으면 그 팀원은 관리자 PC의
+  // 팀 현황/팀 진행 현황에 영원히 나타나지 않는다(로스터는 클라우드에만 모이므로).
+  ipcMain.handle('create-user', (_, name, pin) => {
+    const result = db.users.create(name, pin);
+    fireSync(() => cloud.sync.teamMember(result));
+    return result;
+  });
   ipcMain.handle('verify-user', (_, name, pin) => {
     const ok = db.users.verify(name, pin);
     if (ok) currentUsername = name;
@@ -298,9 +313,49 @@ function setupIpcHandlers() {
   });
 
   // 팀원 전체 목록 (역할 + 프로젝트 현황 통계 포함)
-  ipcMain.handle('get-team-members', () => {
-    return db.users.getAll().map(u => {
-      const projs = db.projects.getAll(u.name);
+  //
+  // 로스터와 건수 모두 클라우드가 원본이다. 로컬만 보면 두 가지가 동시에 틀린다:
+  //  - 로스터: 이 PC에서 만들어진 계정만 보인다 (다른 PC에서 가입한 팀원이 빠짐)
+  //  - 건수:   이 PC의 로컬 store에는 본인 프로젝트만 있다 → 남들은 전부 0건으로 표시됨
+  // 클라우드가 준비되지 않았으면(오프라인) 로컬만으로 기존처럼 동작한다.
+  ipcMain.handle('get-team-members', async () => {
+    const local = db.users.getAll();
+    let roster  = local;
+    let byUser  = null;   // username → projects (클라우드 기준)
+
+    if (cloud.isReady()) {
+      try {
+        const [remoteMembers, team] = await Promise.all([
+          cloud.pull.teamMembers(),
+          cloud.pull.teamProjects(),
+        ]);
+
+        // 로컬에 같은 이름이 있으면 로컬 계정(id)을 그대로 쓰고, 없으면 조회 전용 항목으로 추가한다.
+        // 여기서 로컬 계정을 만들지는 않는다 — 화면에 보여주기 위해 로그인 가능한 계정을
+        // 늘릴 이유가 없다(계정 생성은 로그인 화면의 로스터 pull이 담당).
+        const seen = new Map(local.map(u => [u.name, u]));
+        const add = (name, role) => {
+          if (name && !seen.has(name)) seen.set(name, { id: null, name, role: role || 'member' });
+        };
+        for (const row of remoteMembers) add(row.username, row.role);
+
+        byUser = {};
+        for (const p of team.projects) (byUser[p.username] ||= []).push(p);
+
+        // 클라우드에 프로젝트가 있는데 로스터에는 없는 사람도 팀원으로 본다.
+        // 로스터 동기화가 없던 구버전으로 가입한 팀원은 team_members 행이 없지만
+        // 프로젝트는 이미 올라와 있다 — 이들이 목록에서 빠지면 그 프로젝트가 통째로 안 보인다.
+        // (본인 PC가 새 버전으로 올라오면 로그인 시 로스터 행도 채워진다.)
+        Object.keys(byUser).forEach(name => add(name, 'member'));
+
+        roster = [...seen.values()];
+      } catch (e) {
+        console.error('[get-team-members] 클라우드 조회 실패, 로컬로 대체:', e.message);
+      }
+    }
+
+    return roster.map(u => {
+      const projs = byUser ? (byUser[u.name] || []) : db.projects.getAll(u.name);
       return {
         ...u,
         totalProjects: projs.length,
@@ -332,6 +387,10 @@ function setupIpcHandlers() {
     const failed  = [];
     for (const row of remote) {
       if (knownNames.has(row.username)) continue;
+      // 관리자 계정은 절대 자동 생성하지 않는다. 여기서 만드는 계정의 PIN은 임시값('0000')이라,
+      // admin 행을 만들면 팀원 PC에서 아무나 관리자로 로그인할 수 있게 된다.
+      // 관리자 PC는 자기 계정을 직접 만들어 쓰므로 내려받을 필요도 없다.
+      if (row.role === 'admin') continue;
       try {
         const nu = db.users.create(row.username, '0000', row.role || 'member');
         knownNames.add(nu.name);
