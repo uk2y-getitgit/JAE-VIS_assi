@@ -1812,6 +1812,9 @@ nav { flex: 1; padding: 0 8px; display: flex; flex-direction: column; gap: 1px; 
   transition: border-color .15s, background .15s;
 }
 .team-progress-project-card:hover { border-color: var(--cyan, #00cfff88); background: var(--bg-hover, rgba(127,127,127,0.05)); }
+/* 완료·청구완료 카드 — 구분선만으로는 완료 건만 있는 팀원에서 구분이 안 되므로 톤을 낮춘다 */
+.team-progress-project-card.is-done { opacity: .62; border-style: dashed; }
+.team-progress-project-card.is-done:hover { opacity: 1; }
 .tpp-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
 .tpp-name   { font-size: 14px; font-weight: 600; color: var(--text); }
 .tpp-cat    { font-size: 12px; color: var(--text-muted); margin-bottom: 10px; }

@@ -436,7 +436,7 @@ function renderDashboard() {
       if (!l1 || l1.id !== catId) return false;
     }
     // 완료/청구완료 프로젝트는 기본 숨김. (토글 ON 또는 상태 필터로 직접 선택 시 표시)
-    if (!showCompleted && !status && (p.status === '완료' || p.status === '청구완료')) return false;
+    if (!showCompleted && !status && isDoneStatus(p.status)) return false;
     return true;
   });
 
@@ -455,9 +455,8 @@ function renderDashboard() {
   }
 
   // 완료·청구완료 프로젝트는 하단으로 정렬하고, 활성 프로젝트와 구분선으로 분리
-  const isDone     = p => p.status === '완료' || p.status === '청구완료';
-  const activeList = projects.filter(p => !isDone(p));
-  const doneList   = projects.filter(p => isDone(p));
+  const activeList = projects.filter(p => !isDoneStatus(p.status));
+  const doneList   = projects.filter(p =>  isDoneStatus(p.status));
   const renderFn   = currentView === 'card' ? renderProjectCard : renderProjectRow;
 
   let html = activeList.map(renderFn).join('');
@@ -2459,6 +2458,12 @@ let teamProgressData    = null;  // { projects, processes }
 let teamProgressError   = null;
 let teamProgressMembers = [];    // getTeamMembers() 캐시 (이름/역할)
 let selectedTeamMember  = null;
+let showTeamCompleted   = false; // 팀원 프로젝트 목록에 완료·청구완료 포함 여부 (전체현황 showCompleted와 같은 규칙)
+
+// 완료로 볼 상태 — 전체현황(renderDashboard)과 같은 기준을 쓴다
+function isDoneStatus(status) {
+  return status === '완료' || status === '청구완료';
+}
 
 async function renderTeamProgressDashboard() {
   document.getElementById('teamProgressMembers').innerHTML = '<div class="empty-state"><p>불러오는 중...</p></div>';
@@ -2523,16 +2528,30 @@ function renderTeamProgressProjects() {
     return;
   }
 
-  const projs = teamProgressData.projects.filter(p => p.username === selectedTeamMember);
-  if (!projs.length) {
+  const all = teamProgressData.projects.filter(p => p.username === selectedTeamMember);
+  if (!all.length) {
     container.innerHTML = '<div class="empty-state"><p>등록된 프로젝트가 없습니다.</p></div>';
     return;
   }
 
-  container.innerHTML = projs.map(p => {
+  // 완료·청구완료는 구분선 아래로 내리고, 토글이 꺼져 있으면 아예 감춘다 (전체현황과 동일한 규칙)
+  const activeList = all.filter(p => !isDoneStatus(p.status));
+  const doneList   = all.filter(p =>  isDoneStatus(p.status));
+  const projs      = showTeamCompleted ? [...activeList, ...doneList] : activeList;
+
+  if (!projs.length) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">✅</div>
+        <p>진행 중인 프로젝트가 없습니다.<br>완료 ${doneList.length}건은 "완료 포함"으로 볼 수 있습니다.</p>
+      </div>`;
+    return;
+  }
+
+  const card = (p) => {
     const procs = teamProgressData.processes.filter(pr => pr.project_id === p.id);
     return `
-      <div class="team-progress-project-card" data-proj-id="${p.id}">
+      <div class="team-progress-project-card${isDoneStatus(p.status) ? ' is-done' : ''}" data-proj-id="${p.id}">
         <div class="tpp-header">
           <span class="tpp-name">${escapeHtml(p.name)}</span>
           <span class="status-badge status-${p.status}">${p.status}</span>
@@ -2540,7 +2559,14 @@ function renderTeamProgressProjects() {
         <div class="tpp-cat">📁 ${getCategoryBreadcrumb(p.category_id)}</div>
         ${buildMiniStepper(procs)}
       </div>`;
-  }).join('');
+  };
+
+  let html = activeList.map(card).join('');
+  if (showTeamCompleted && doneList.length) {
+    if (activeList.length) html += `<div class="completed-divider"><span>완료 ${doneList.length}</span></div>`;
+    html += doneList.map(card).join('');
+  }
+  container.innerHTML = html;
 
   container.querySelectorAll('.team-progress-project-card').forEach(el => {
     el.addEventListener('click', () => {
@@ -2549,6 +2575,14 @@ function renderTeamProgressProjects() {
     });
   });
 }
+
+// ─ 완료 포함/제외 토글 (전체현황 btnToggleCompleted와 동작 동일)
+document.getElementById('btnToggleTeamCompleted')?.addEventListener('click', (e) => {
+  showTeamCompleted = !showTeamCompleted;
+  e.currentTarget.classList.toggle('active', showTeamCompleted);
+  e.currentTarget.textContent = showTeamCompleted ? '완료 제외' : '완료 포함';
+  renderTeamProgressProjects();
+});
 
 // 공정 목록(순서대로) → 완료 ✓ / 첫 미완료 ●(진행중) / 나머지 ○ 스테퍼 한 줄
 function buildStepperRow(procs) {

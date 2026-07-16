@@ -573,7 +573,10 @@
     <section class="page" id="page-team-progress">
       <div class="page-header">
         <div class="page-title">팀 진행 현황 대시보드</div>
-        <button class="btn-secondary" id="btnRefreshTeamProgress">🔄 새로고침</button>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn-toggle-completed" id="btnToggleTeamCompleted" title="완료·청구완료 프로젝트 표시/숨김">완료 포함</button>
+          <button class="btn-secondary" id="btnRefreshTeamProgress">🔄 새로고침</button>
+        </div>
       </div>
       <div class="team-progress-layout">
         <div class="team-progress-members" id="teamProgressMembers">
