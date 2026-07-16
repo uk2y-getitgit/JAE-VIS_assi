@@ -337,7 +337,9 @@ const processes = {
       updated_at: new Date().toISOString(),
     };
     store.set('processes', [...list, newProc]);
-    if (!data.parent_id) projects.refreshStatus(data.project_id);
+    // 항목(그룹) 안 공정도 calcStatus 집계 대상이므로 부모 유무와 무관하게 상태를 다시 계산한다.
+    // (컨테이너 자체는 is_group이라 집계에서 빠지므로 계산 결과에 영향 없음)
+    projects.refreshStatus(data.project_id);
     return newProc;
   },
   update: (id, data) => {

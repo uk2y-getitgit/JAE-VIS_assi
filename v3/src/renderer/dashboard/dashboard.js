@@ -888,7 +888,8 @@ function renderGroupedView(projectId, allProcs, container, addBtn) {
     const group    = allProcs.find(p => p.id === currentGroupId);
     const children = allProcs.filter(p => p.parent_id === currentGroupId);
     setGroupNav(true, group?.name || '');
-    addBtn.style.display = 'none';
+    // 항목 안에서도 공정을 추가할 수 있다 — 저장 시 parent_id가 이 항목으로 붙는다.
+    addBtn.style.display = teamModalMode ? 'none' : '';
 
     if (children.length === 0) {
       container.innerHTML = '<div class="empty-state"><div class="empty-icon">📋</div><p>세부 항목이 없습니다.</p></div>';
@@ -1206,8 +1207,19 @@ document.getElementById('dlgGunjinGroupName').addEventListener('keydown', (e) =>
   if (e.key === 'Enter') { e.preventDefault(); document.getElementById('btnGunjinGroupSave').click(); }
 });
 
+// 공정 추가 대상 항목 — 드릴인 중이면 그 항목 밑으로, 최상위면 null.
+// 다이얼로그를 여는 시점에 고정해 둔다(저장 전에 드릴인 상태가 바뀌어도 엉뚱한 곳에 붙지 않게).
+let procDialogParentId = null;
+
 document.getElementById('btnAddProcess').addEventListener('click', () => {
   // 공정 추가
+  procDialogParentId = currentGroupId;
+  const group = procDialogParentId
+    ? (processCache[currentProjId] || []).find(p => p.id === procDialogParentId)
+    : null;
+  document.getElementById('procDialogTitle').textContent = group
+    ? `${group.name} — 공정 추가`
+    : '공정 단계 추가';
   document.getElementById('dlgProcName').value    = '';
   document.getElementById('dlgPlanStart').value   = '';
   document.getElementById('dlgPlanEnd').value     = '';
@@ -1232,18 +1244,28 @@ document.getElementById('btnProcDlgSave').addEventListener('click', async () => 
     actual_end   = document.getElementById('dlgActualEnd').value   || null;
   }
 
+  // 새 공정은 같은 항목 안 마지막 자리에 놓는다 (order_index 기본값은 프로젝트 전체 길이라
+  // 항목 밖 공정보다 뒤로 밀려 일정표·완료업무의 항목 내 순서가 어긋난다)
+  let order_index;
+  if (procDialogParentId) {
+    const siblings = (processCache[projectId] || []).filter(p => p.parent_id === procDialogParentId);
+    if (siblings.length) order_index = Math.max(...siblings.map(p => p.order_index ?? 0)) + 1;
+  }
+
   await window.api.createProcess({
     project_id: projectId,
     name,
+    parent_id: procDialogParentId,
+    order_index,
     plan_start: document.getElementById('dlgPlanStart').value || null,
     plan_end:   document.getElementById('dlgPlanEnd').value   || null,
     actual_start,
     actual_end,
   });
   closeDialog('processDialog');
-  await renderProcessList(projectId);
-  allProjects = await window.api.getProjects();
-  renderDashboard();
+  await refreshAfterProcChange(projectId);
+  if (procDialogParentId) showToast('항목에 공정이 추가됐습니다.');
+  procDialogParentId = null;
 });
 
 // ═══════════════════════════════════════════════════════════

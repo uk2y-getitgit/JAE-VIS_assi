@@ -507,10 +507,20 @@ function setupIpcHandlers() {
   });
 
   // ─── 공정 ─────────────────────────────────────────────────
+  // 공정을 추가·수정·삭제하면 db가 프로젝트 상태를 다시 계산한다(projects.refreshStatus).
+  // 그 결과는 로컬에만 반영되므로, 바뀐 경우 프로젝트 행도 클라우드에 올려야
+  // 관리자의 "팀 진행 현황"이 옛 상태 배지를 보여주지 않는다.
+  function syncProjectIfStatusChanged(projectId, statusBefore) {
+    const proj = db.projects.getById(projectId);
+    if (proj && proj.status !== statusBefore) fireSync(() => cloud.sync.project(proj));
+  }
+
   ipcMain.handle('get-processes', (_, projectId) => db.processes.getByProject(projectId));
   ipcMain.handle('create-process', (_, data) => {
+    const statusBefore = db.projects.getById(data.project_id)?.status;
     const result = db.processes.create(data);
     fireSync(() => cloud.sync.process(result));
+    syncProjectIfStatusChanged(result.project_id, statusBefore);
     const proj = db.projects.getById(result.project_id);
     db.changeLogs.add({ username: currentUsername, target_type: 'process', target_id: result.id,
       project_id: result.project_id, project_name: proj?.name || '',
@@ -519,9 +529,11 @@ function setupIpcHandlers() {
   });
   ipcMain.handle('update-process', (_, id, data) => {
     const before = db.processes.getById(id);
+    const statusBefore = before ? db.projects.getById(before.project_id)?.status : undefined;
     const result = db.processes.update(id, data);
     if (result) {
       fireSync(() => cloud.sync.process(result));
+      syncProjectIfStatusChanged(result.project_id, statusBefore);
       const proj = db.projects.getById(result.project_id);
       // 상태 변경 이력
       if (data.status && before && data.status !== before.status) {
@@ -545,9 +557,11 @@ function setupIpcHandlers() {
   });
   ipcMain.handle('delete-process', (_, id) => {
     const before = db.processes.getById(id);
+    const statusBefore = before ? db.projects.getById(before.project_id)?.status : undefined;
     db.processes.softDelete(id);
     if (before) {
       fireSync(() => cloud.sync.process({ ...before, is_deleted: true }));
+      syncProjectIfStatusChanged(before.project_id, statusBefore);
       const proj = db.projects.getById(before.project_id);
       db.changeLogs.add({ username: currentUsername, target_type: 'process', target_id: id,
         project_id: before.project_id, project_name: proj?.name || '',
