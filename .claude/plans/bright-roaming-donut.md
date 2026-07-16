@@ -134,7 +134,7 @@ users.create(name, pin, role = 'member')  // role 파라미터 추가
 |---|---|
 | `create-team-member` | `db.users.create(name, pin, role)` 호출 → `fireSync(() => cloud.sync.teamMember({...}))` |
 | `get-team-members` | `db.users.getAll()` (role 포함) + 각 팀원의 프로젝트 통계(`db.projects.getAll(username).length`, 상태별 카운트) 조합 반환 |
-| `cloud-pull-team-members` | `cloud.pull.teamMembers()` 로 클라우드의 `team_members` 전체를 가져와, 로컬에 없는 이름은 임시 PIN(`'0000'`, `needsPinReset:true`)으로 로컬 `users`에 생성 |
+| `cloud-pull-team-members` | `cloud.pull.teamMembers()` 로 클라우드의 `team_members` 전체를 가져와, 로컬에 없는 이름은 고정 임시 PIN(`needsPinReset:true`)으로 로컬 `users`에 생성 |
 
 `preload.js`에 `createTeamMember`, `getTeamMembers`, `cloudPullTeamMembers` 노출.
 
@@ -247,9 +247,10 @@ Feature 2는 DB/IPC 신규 작업이 없으므로 **data-agent/ipc-agent 단계�
   미검증(코드 정적 검토로만 확인) — 실제 배포 전 팀원 PC 또는 초기화한 테스트 환경에서 1회 육안
   확인 권장.
 
-- **PIN 배포**: `cloud-pull-team-members`로 프로비저닝된 신규 로컬 계정의 임시 PIN(`'0000'`)을
-  팀원에게 어떻게 전달할지는 운영 절차(구두 전달 등)로 남겨둠 — 자동 이메일 발송 등은 범위 밖.
-  참고: 로컬 users.create()는 4자리 숫자만 허용하므로 `'0000'`을 그대로 사용해도 통과된다
+- **PIN 배포**: `cloud-pull-team-members`로 프로비저닝된 신규 로컬 계정의 임시 PIN(실제 값은
+  `ipcHandlers.js`의 해당 핸들러 참조)을 팀원에게 어떻게 전달할지는 운영 절차(구두 전달 등)로
+  남겨둠 — 자동 이메일 발송 등은 범위 밖.
+  참고: 로컬 users.create()는 4자리 숫자만 허용하므로 그 임시값도 그대로 통과된다
   (db.js:132 정규식 `/^\d{4}$/`).
 - **소분류 삭제 시 프로젝트 영향**: `categories.delete()`는 하위 분류까지 재귀 삭제하지만
   프로젝트의 `category_id`는 그대로 남는다(고아 참조, db.js:182-183 주석에 "ID 기반 참조이므로
