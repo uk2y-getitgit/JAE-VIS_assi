@@ -453,6 +453,7 @@ function setupIpcHandlers() {
         db.changeLogs.add({ username: currentUsername, target_type: 'project', target_id: id,
           project_id: id, target_name: result.name, action: 'status_change',
           field_changed: 'status', old_value: before.status, new_value: data.status });
+        require('./notifier').pruneDone(currentUsername);
       } else if (data.name || data.description !== undefined || data.category_id !== undefined) {
         db.changeLogs.add({ username: currentUsername, target_type: 'project', target_id: id,
           project_id: id, target_name: result.name, action: 'update' });
@@ -492,6 +493,7 @@ function setupIpcHandlers() {
       db.changeLogs.add({ username: currentUsername, target_type: 'project', target_id: id,
         project_id: id, target_name: result.name, action: 'status_change',
         field_changed: 'status', old_value: before?.status || '', new_value: '완료' });
+      require('./notifier').pruneDone(currentUsername);
     }
     return result;
   });

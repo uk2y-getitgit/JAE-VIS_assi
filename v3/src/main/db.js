@@ -571,6 +571,13 @@ const notifications = {
   markRead:     (id) => store.set('notifications',
     store.get('notifications', []).map(n => n.id === id ? { ...n, is_read: true } : n)),
   clear:        ()   => store.set('notifications', []),
+  removeByProjects: (ids) => {
+    const set  = new Set(ids);
+    const list = store.get('notifications', []);
+    const kept = list.filter(n => !set.has(n.project_id));
+    if (kept.length !== list.length) store.set('notifications', kept);
+    return list.length - kept.length;
+  },
 };
 
 // ─── 변경 이력 타임라인 ───────────────────────────────────────

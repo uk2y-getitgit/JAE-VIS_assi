@@ -726,21 +726,21 @@
       <label class="form-label">공정명 *</label>
       <input type="text" class="form-input" id="dlgProcName" placeholder="예: 현장 점검, 보고서 작성...">
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-      <div class="form-group">
-        <label class="form-label">계획 시작일</label>
-        <input type="date" class="form-input" id="dlgPlanStart">
-      </div>
-      <div class="form-group">
-        <label class="form-label">계획 종료일</label>
-        <input type="date" class="form-input" id="dlgPlanEnd">
-      </div>
-    </div>
     <div class="form-group">
-      <label class="form-label">실시 구분</label>
+      <label class="form-label">일정 구분</label>
       <div class="date-type-toggle">
         <button type="button" class="date-type-btn active" id="btnDateShort">단기 (하루)</button>
         <button type="button" class="date-type-btn" id="btnDateLong">장기 (기간)</button>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="form-group">
+        <label class="form-label" id="dlgPlanStartLabel">계획일</label>
+        <input type="date" class="form-input" id="dlgPlanStart">
+      </div>
+      <div class="form-group" id="dlgPlanEndGroup" style="display:none">
+        <label class="form-label">계획 종료일</label>
+        <input type="date" class="form-input" id="dlgPlanEnd">
       </div>
     </div>
     <div class="form-group" id="dlgActualShort">

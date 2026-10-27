@@ -1105,6 +1105,9 @@ function setDateType(type) {
   document.getElementById('btnDateLong').classList.toggle('active', type === 'long');
   document.getElementById('dlgActualShort').style.display = type === 'short' ? '' : 'none';
   document.getElementById('dlgActualLong').style.display  = type === 'long'  ? '' : 'none';
+  // 단기는 계획도 하루짜리 — 종료일 칸을 숨기고 저장 시 시작일로 채운다
+  document.getElementById('dlgPlanEndGroup').style.display = type === 'long' ? '' : 'none';
+  document.getElementById('dlgPlanStartLabel').textContent = type === 'long' ? '계획 시작일' : '계획일';
 }
 
 document.getElementById('btnDateShort').addEventListener('click', () => setDateType('short'));
@@ -1243,6 +1246,12 @@ document.getElementById('btnProcDlgSave').addEventListener('click', async () => 
     actual_end   = document.getElementById('dlgActualEnd').value   || null;
   }
 
+  // 계획 종료일이 비면 시작일 하루짜리로 저장 — 종료일 없이 저장하면 3주 스케줄 바가 끝없이 늘어난다
+  const plan_start = document.getElementById('dlgPlanStart').value || null;
+  let plan_end = currentDateType === 'long' ? (document.getElementById('dlgPlanEnd').value || null) : null;
+  if (plan_start && !plan_end) plan_end = plan_start;
+  if (plan_start && plan_end && plan_end < plan_start) { alert('계획 종료일이 시작일보다 빠릅니다.'); return; }
+
   // 새 공정은 같은 항목 안 마지막 자리에 놓는다 (order_index 기본값은 프로젝트 전체 길이라
   // 항목 밖 공정보다 뒤로 밀려 일정표·완료업무의 항목 내 순서가 어긋난다)
   let order_index;
@@ -1256,8 +1265,8 @@ document.getElementById('btnProcDlgSave').addEventListener('click', async () => 
     name,
     parent_id: procDialogParentId,
     order_index,
-    plan_start: document.getElementById('dlgPlanStart').value || null,
-    plan_end:   document.getElementById('dlgPlanEnd').value   || null,
+    plan_start,
+    plan_end,
     actual_start,
     actual_end,
   });
@@ -1378,8 +1387,9 @@ function calcBarPct(startStr, endStr, firstDay) {
   const totalMs = 21 * dayMs;
   const firstMs = firstDay.getTime();
 
-  const startMs = startStr ? parseLocalDate(startStr).getTime() : firstMs;
-  const endMs   = endStr   ? parseLocalDate(endStr).getTime() + dayMs : firstMs + totalMs;
+  // 한쪽 날짜만 있으면 그 하루로 본다 (예전엔 빈 쪽을 3주 창 끝까지 늘려 바가 끝없이 이어졌다 — 기존 데이터 보정)
+  const startMs = parseLocalDate(startStr || endStr).getTime();
+  const endMs   = parseLocalDate(endStr || startStr).getTime() + dayMs;
 
   if (startMs >= firstMs + totalMs || endMs <= firstMs) return null;
 

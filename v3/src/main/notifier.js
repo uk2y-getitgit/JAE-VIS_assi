@@ -23,8 +23,24 @@ function fmtDate(iso) {
   return `${Number(m)}/${Number(d)}`;
 }
 
+// 사용자가 완료 처리한 프로젝트(완료·청구완료)는 공정에 남은 일정과 무관하게 더 알리지 않는다
+const isDoneProject = (proj) => proj.status === '완료' || proj.status === '청구완료';
+
+// 완료 프로젝트에 이미 쌓인 알림을 알림 센터에서 걷어내고 뱃지를 갱신한다
+function pruneDone(username) {
+  if (!username) return;
+  const doneIds = db.projects.getAll(username).filter(isDoneProject).map(p => p.id);
+  if (doneIds.length && db.notifications.removeByProjects(doneIds) > 0) sendBadge();
+}
+
+function sendBadge() {
+  if (!_dashWin) return;
+  try { _dashWin.webContents.send('notif-update', db.notifications.getUnread().length); } catch (e) {}
+}
+
 function checkAll(username) {
   if (!username) return;
+  pruneDone(username);
   const s = db.settings.get();
   if (s.notifEnabled === false) return;
 
@@ -50,7 +66,7 @@ function checkAll(username) {
   // 오늘 자정 기준으로 daysLeft 계산
   const todayMidnight = new Date(now); todayMidnight.setHours(0, 0, 0, 0);
 
-  projects.forEach(proj => {
+  projects.filter(proj => !isDoneProject(proj)).forEach(proj => {
     db.processes.getByProject(proj.id)
       .filter(p => !p.is_group && p.plan_end && p.status !== '완료')
       .forEach(proc => {
@@ -119,12 +135,7 @@ function checkAll(username) {
   });
 
   // 대시보드에 뱃지 업데이트 신호 전송
-  if (_dashWin) {
-    try {
-      const unreadCount = db.notifications.getUnread().length;
-      _dashWin.webContents.send('notif-update', unreadCount);
-    } catch (e) {}
-  }
+  sendBadge();
 }
 
 function start(username, dashWin) {
@@ -142,4 +153,4 @@ function stop() {
   _interval = null;
 }
 
-module.exports = { start, stop, checkAll, setWindow };
+module.exports = { start, stop, checkAll, pruneDone, setWindow };
