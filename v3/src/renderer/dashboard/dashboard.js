@@ -832,6 +832,76 @@ async function renderProcessList(projectId) {
 
   updateProcToolbar(procs);
   if (teamModalMode) applyTeamReadOnlyLock(container, addBtn);
+  else attachProcDragEvents(projectId, container);
+}
+
+// 순서 조절 핸들 — 열람 전용(팀 대시보드)에서는 그리지 않는다
+function dragHandleHtml() {
+  return teamModalMode ? '' : '<span class="proc-drag-handle" draggable="true" title="드래그해서 순서 변경">⋮⋮</span>';
+}
+
+// 공정·항목 드래그 정렬 — 지금 보이는 단계(최상위 또는 항목 안)의 형제끼리만 순서를 바꾼다.
+// 핸들(⋮⋮)을 잡았을 때만 드래그되므로 날짜 입력·버튼 클릭과 충돌하지 않는다.
+function attachProcDragEvents(projectId, container) {
+  const rowSel = '.process-item, .gunjin-group-item';
+  let dragging = null;
+
+  container.querySelectorAll('.proc-drag-handle').forEach(handle => {
+    handle.addEventListener('click', e => e.stopPropagation()); // 항목 드릴인 방지
+    handle.addEventListener('dragstart', (e) => {
+      dragging = handle.closest(rowSel);
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', dragging.dataset.procId);
+      e.dataTransfer.setDragImage(dragging, 20, 20);
+      dragging.classList.add('dragging');
+    });
+    handle.addEventListener('dragend', async () => {
+      if (!dragging) return;
+      dragging.classList.remove('dragging');
+      dragging = null;
+      const visibleIds = [...container.querySelectorAll(rowSel)].map(el => el.dataset.procId);
+      const procs      = processCache[projectId] || [];
+      const level      = procs.filter(p => (p.parent_id || null) === (currentGroupId || null)).map(p => p.id);
+      const before     = level.filter(id => visibleIds.includes(id));
+      if (before.join() === visibleIds.join()) return; // 제자리
+      await window.api.reorderProcesses(projectId, buildProcFlatOrder(procs, visibleIds));
+      await refreshAfterProcChange(projectId);
+    });
+  });
+
+  // container는 다시 그려도 같은 요소라 addEventListener를 쓰면 렌더마다 쌓인다 → 속성으로 교체
+  container.ondragover = (e) => {
+    if (!dragging) return;
+    e.preventDefault();
+    const over = e.target.closest(rowSel);
+    if (!over || over === dragging || over.parentElement !== container) return;
+    const rect  = over.getBoundingClientRect();
+    const after = e.clientY > rect.top + rect.height / 2;
+    container.insertBefore(dragging, after ? over.nextSibling : over);
+  };
+  container.ondrop = (e) => { if (dragging) e.preventDefault(); };
+}
+
+// 프로젝트 전체 공정의 새 순서 — 항목 바로 뒤에 그 하위 공정이 오도록 펼쳐서 0..N-1로 다시 매긴다.
+// 지금 보이는 단계만 visibleIds 순서를 따르고 나머지 단계는 기존 순서를 유지한다.
+// (형제끼리만 번호를 바꾸면 항목 생성 시 생긴 중복 order_index 때문에 순서가 흔들린다)
+function buildProcFlatOrder(procs, visibleIds) {
+  const level = currentGroupId || null;
+  const byOrder = (a, b) => (a.order_index || 0) - (b.order_index || 0);
+  const childrenOf = (pid) => {
+    const sibs = procs.filter(p => (p.parent_id || null) === pid).sort(byOrder);
+    if (pid !== level) return sibs;
+    const moved = visibleIds.map(id => sibs.find(p => p.id === id)).filter(Boolean);
+    return moved.concat(sibs.filter(p => !visibleIds.includes(p.id)));
+  };
+  const out = [];
+  const walk = (pid) => childrenOf(pid).forEach(p => {
+    out.push(p.id);
+    if (p.is_group) walk(p.id);
+  });
+  walk(null);
+  procs.forEach(p => { if (!out.includes(p.id)) out.push(p.id); }); // 부모가 사라진 공정 등
+  return out;
 }
 
 // 항목 추가 버튼 + 묶기 툴바 — 최상위에서만, 열람 전용(팀 대시보드)에서는 숨김.
@@ -845,9 +915,9 @@ function updateProcToolbar(procs) {
   bar.style.display = editableTop ? 'flex' : 'none';
   if (!editableTop) return;
 
-  // 묶을 대상 = 최상위 비그룹 공정. 하나도 없으면 묶기 버튼을 숨긴다.
-  const groupable = procs.filter(p => !p.is_group && !p.parent_id).length;
-  document.getElementById('btnSelectMode').style.display = groupable > 0 ? '' : 'none';
+  // 묶기 버튼은 항상 보인다 — 한 번 묶은 뒤에도 남은 공정이나 새로 추가한 공정을 이어서 묶을 수 있게.
+  // 묶을 대상(최상위 비그룹 공정)이 없을 때는 누르면 안내만 한다.
+  document.getElementById('btnSelectMode').style.display = '';
   document.getElementById('btnSelectMode').textContent   = selectMode ? '묶기 취소' : '☐ 묶기';
   document.getElementById('btnGroupSelected').style.display = selectMode ? '' : 'none';
   document.getElementById('procToolbarHint').textContent = selectMode
@@ -908,7 +978,7 @@ function renderGroupedView(projectId, allProcs, container, addBtn) {
     // 그룹 아이템 클릭 → 드릴인 (삭제·풀기 버튼 클릭은 제외)
     container.querySelectorAll('.gunjin-group-item').forEach(item => {
       item.addEventListener('click', (e) => {
-        if (e.target.closest('.btn-del-proc, .btn-ungroup')) return;
+        if (e.target.closest('.btn-del-proc, .btn-ungroup, .proc-drag-handle')) return;
         currentGroupId = item.dataset.groupId;
         renderProcessList(projectId);
       });
@@ -962,8 +1032,9 @@ function renderGroupItem(proc, allProcs) {
   const total    = children.length;
   const pct      = total ? Math.round((done / total) * 100) : 0;
   return `
-  <div class="gunjin-group-item" data-group-id="${proc.id}">
+  <div class="gunjin-group-item" data-group-id="${proc.id}" data-proc-id="${proc.id}">
     <div class="gunjin-group-info">
+      ${dragHandleHtml()}
       <span class="gunjin-group-icon">📁</span>
       <span class="gunjin-group-name">${escapeHtml(proc.name)}</span>
       <span class="gunjin-group-count">${done}/${total} 완료</span>
@@ -1074,8 +1145,9 @@ function renderProcessItem(proc) {
     : '';
 
   return `
-  <div class="process-item" id="proc-${proc.id}">
+  <div class="process-item" id="proc-${proc.id}" data-proc-id="${proc.id}">
     <div class="proc-header">
+      ${dragHandleHtml()}
       ${selectCb}
       <div class="proc-name">${escapeHtml(proc.name)}</div>
       <div class="proc-mode-toggle" data-proc-id="${proc.id}">
@@ -1121,6 +1193,11 @@ document.getElementById('btnBackToGroup').addEventListener('click', () => {
 
 // ── 묶기 모드 ──────────────────────────────────────────────
 document.getElementById('btnSelectMode').addEventListener('click', () => {
+  const groupable = (processCache[currentProjId] || []).filter(p => !p.is_group && !p.parent_id).length;
+  if (!selectMode && groupable === 0) {
+    showToast('묶을 공정이 없습니다. 항목 밖에 있는 공정만 묶을 수 있습니다.');
+    return;
+  }
   selectMode = !selectMode;
   renderProcessList(currentProjId);
 });

@@ -813,6 +813,14 @@ nav { flex: 1; padding: 0 8px; display: flex; flex-direction: column; gap: 1px; 
   accent-color: var(--accent); -webkit-app-region: no-drag;
 }
 
+.proc-drag-handle {
+  flex-shrink: 0; cursor: grab; user-select: none; -webkit-app-region: no-drag;
+  font-size: 13px; letter-spacing: -3px; padding: 0 6px 0 0; color: var(--text-muted);
+}
+.proc-drag-handle:hover  { color: var(--accent); }
+.proc-drag-handle:active { cursor: grabbing; }
+.process-item.dragging, .gunjin-group-item.dragging { opacity: .4; border-style: dashed; }
+
 .gunjin-group-item {
   background: var(--bg-card); border: 1px solid var(--border);
   border-radius: var(--radius-lg); padding: 12px 14px;
