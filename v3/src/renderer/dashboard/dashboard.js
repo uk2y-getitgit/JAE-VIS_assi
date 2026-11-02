@@ -832,8 +832,51 @@ async function renderProcessList(projectId) {
 
   updateProcToolbar(procs);
   if (teamModalMode) applyTeamReadOnlyLock(container, addBtn);
-  else attachProcDragEvents(projectId, container);
+  else {
+    attachProcDragEvents(projectId, container);
+    container.querySelectorAll('.btn-rename-proc').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation(); // 항목 드릴인 방지
+        openProcRenameDialog(btn.dataset.id);
+      });
+    });
+  }
 }
+
+// ── 항목·공정 이름 수정 ────────────────────────────────────
+let renameTargetId = null;
+
+function openProcRenameDialog(procId) {
+  const proc = (processCache[currentProjId] || []).find(p => p.id === procId);
+  if (!proc) return;
+  renameTargetId = procId;
+  const kind = proc.is_group ? '항목명' : '공정명';
+  document.getElementById('procRenameTitle').textContent = `${kind} 수정`;
+  document.getElementById('procRenameLabel').textContent = `${kind} *`;
+  const input = document.getElementById('dlgProcRenameName');
+  input.value = proc.name;
+  openDialog('procRenameDialog');
+  input.focus();
+  input.select();
+}
+
+document.getElementById('btnProcRenameSave').addEventListener('click', async () => {
+  const name = document.getElementById('dlgProcRenameName').value.trim();
+  if (!name) { alert('이름을 입력하세요.'); return; }
+  const proc = (processCache[currentProjId] || []).find(p => p.id === renameTargetId);
+  closeDialog('procRenameDialog');
+  if (!proc || proc.name === name) return;
+  await window.api.updateProcess(proc.id, { name });
+  await refreshAfterProcChange(currentProjId);
+  showToast(`"${name}"(으)로 수정했습니다.`);
+});
+document.getElementById('btnProcRenameCancel').addEventListener('click', () => closeDialog('procRenameDialog'));
+document.getElementById('procRenameDialog').addEventListener('click', (e) => {
+  if (e.target === e.currentTarget) closeDialog('procRenameDialog');
+});
+document.getElementById('dlgProcRenameName').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); document.getElementById('btnProcRenameSave').click(); }
+});
 
 // 순서 조절 핸들 — 열람 전용(팀 대시보드)에서는 그리지 않는다
 function dragHandleHtml() {
@@ -939,7 +982,7 @@ function updateGroupSelectedBtn() {
 function applyTeamReadOnlyLock(container, addBtn) {
   addBtn.style.display = 'none';
   container.querySelectorAll('.proc-status-select, .date-input').forEach(el => { el.disabled = true; });
-  container.querySelectorAll('.btn-del-proc, .btn-cal, .btn-ungroup').forEach(el => { el.style.display = 'none'; });
+  container.querySelectorAll('.btn-del-proc, .btn-cal, .btn-ungroup, .btn-rename-proc').forEach(el => { el.style.display = 'none'; });
 }
 
 // 항목(그룹) 네비게이션 바 표시/숨김
@@ -978,7 +1021,7 @@ function renderGroupedView(projectId, allProcs, container, addBtn) {
     // 그룹 아이템 클릭 → 드릴인 (삭제·풀기 버튼 클릭은 제외)
     container.querySelectorAll('.gunjin-group-item').forEach(item => {
       item.addEventListener('click', (e) => {
-        if (e.target.closest('.btn-del-proc, .btn-ungroup, .proc-drag-handle')) return;
+        if (e.target.closest('.btn-del-proc, .btn-ungroup, .btn-rename-proc, .proc-drag-handle')) return;
         currentGroupId = item.dataset.groupId;
         renderProcessList(projectId);
       });
@@ -1045,6 +1088,7 @@ function renderGroupItem(proc, allProcs) {
     </div>
     <div class="gunjin-group-actions">
       <span class="gunjin-group-arrow">›</span>
+      <button class="icon-btn btn-rename-proc" data-id="${proc.id}" title="항목명 수정">✏️</button>
       <button class="icon-btn btn-ungroup" data-id="${proc.id}" title="항목 풀기 (하위 공정은 유지)">⛓</button>
       <button class="icon-btn del btn-del-proc" data-id="${proc.id}" title="항목 삭제 (하위 공정도 함께 삭제)">🗑</button>
     </div>
@@ -1159,6 +1203,7 @@ function renderProcessItem(proc) {
           `<option value="${s}"${proc.status === s ? ' selected' : ''}>${s}</option>`
         ).join('')}
       </select>
+      <button class="icon-btn btn-rename-proc" data-id="${proc.id}" title="공정명 수정">✏️</button>
       <button class="icon-btn del btn-del-proc" data-id="${proc.id}" title="삭제">🗑</button>
     </div>
     <div class="proc-dates">
@@ -1376,11 +1421,52 @@ async function renderMemoList(projectId) {
         ${m.is_pinned ? '<span style="color:var(--cyan);font-size:12px">📌</span>' : ''}
       </div>
       <div class="memo-content">${escapeHtml(m.content)}</div>
-      ${teamModalMode ? '' : `<button class="memo-delete" data-id="${m.id}" title="삭제">✕</button>`}
+      ${teamModalMode ? '' : `<div class="memo-actions">
+        <button class="memo-edit" data-id="${m.id}" title="수정">✏️</button>
+        <button class="memo-delete" data-id="${m.id}" title="삭제">✕</button>
+      </div>`}
     </div>
   `).join('');
 
   if (!teamModalMode) {
+    // 메모 수정 — 그 자리에서 본문을 입력칸으로 바꾼다 (Ctrl+Enter 저장, Esc 취소)
+    list.querySelectorAll('.memo-edit').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const item = btn.closest('.memo-item');
+        const memo = memos.find(m => m.id === btn.dataset.id);
+        if (!memo || item.querySelector('.memo-edit-area')) return;
+        const contentEl = item.querySelector('.memo-content');
+        contentEl.style.display = 'none';
+        item.querySelector('.memo-actions').style.display = 'none';
+        contentEl.insertAdjacentHTML('afterend', `
+          <div class="memo-edit-box">
+            <textarea class="form-textarea memo-edit-area"></textarea>
+            <div class="memo-edit-actions">
+              <button class="btn-secondary memo-edit-cancel" style="font-size:11px;padding:5px 12px">취소</button>
+              <button class="btn-primary memo-edit-save" style="font-size:11px;padding:5px 12px">저장</button>
+            </div>
+          </div>`);
+        const area = item.querySelector('.memo-edit-area');
+        area.value = memo.content;
+        area.focus();
+
+        const save = async () => {
+          const content = area.value.trim();
+          if (!content) { alert('메모 내용을 입력하세요.'); return; }
+          if (content !== memo.content) {
+            await window.api.updateMemo(memo.id, { content, project_id: projectId });
+          }
+          renderMemoList(projectId);
+        };
+        item.querySelector('.memo-edit-save').addEventListener('click', save);
+        item.querySelector('.memo-edit-cancel').addEventListener('click', () => renderMemoList(projectId));
+        area.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' && e.ctrlKey) { e.preventDefault(); save(); }
+          if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); renderMemoList(projectId); }
+        });
+      });
+    });
+
     list.querySelectorAll('.memo-delete').forEach(btn => {
       btn.addEventListener('click', async () => {
         await window.api.deleteMemo(btn.dataset.id);

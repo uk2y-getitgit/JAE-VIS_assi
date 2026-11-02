@@ -1204,12 +1204,17 @@ nav { flex: 1; padding: 0 8px; display: flex; flex-direction: column; gap: 1px; 
 .tag-중요     { background: #fee2e2; color: #dc2626; }
 .tag-보완     { background: #fffbeb; color: #b45309; }
 .tag-확인필요 { background: #eff6ff; color: #2563eb; }
-.memo-delete {
-  position: absolute; top: 8px; right: 10px; background: none; border: none;
+.memo-actions { position: absolute; top: 8px; right: 10px; display: flex; gap: 2px; }
+.memo-edit, .memo-delete {
+  background: none; border: none;
   color: var(--text-muted); font-size: 13px; cursor: pointer; padding: 2px 5px;
   border-radius: var(--radius-sm); transition: all .12s;
 }
+.memo-edit { font-size: 11px; }
+.memo-edit:hover   { background: var(--bg-hover); color: var(--text); }
 .memo-delete:hover { background: #fee2e2; color: #dc2626; }
+.memo-edit-area    { width: 100%; min-height: 64px; font-size: 13px; line-height: 1.55; }
+.memo-edit-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }
 
 /* ════════════════════════════════════════════════════════
    Toast
