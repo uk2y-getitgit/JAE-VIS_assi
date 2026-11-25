@@ -1856,3 +1856,53 @@ nav { flex: 1; padding: 0 8px; display: flex; flex-direction: column; gap: 1px; 
 .mini-stepper-group-rest    { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
 
 .process-item.readonly .proc-header { margin-bottom: 0; }
+
+/* ════════════════════════════════════════════════════════
+   앱 내 알림 카드 캐러셀
+════════════════════════════════════════════════════════ */
+#notifCarousel { z-index: 10000; }
+.nc-box {
+  width: 520px; max-width: calc(100vw - 32px);
+  background: var(--bg-sidebar); border: 1px solid var(--border);
+  border-radius: var(--radius-xl); box-shadow: 0 12px 40px rgba(0,0,0,.5);
+  padding: 16px 16px 14px; display: flex; flex-direction: column; gap: 12px;
+}
+.nc-header { display: flex; align-items: center; justify-content: space-between; }
+.nc-title { font-size: 14px; font-weight: 700; color: var(--text); }
+.nc-counter { font-size: 12px; font-weight: 500; color: var(--text-muted); margin-left: 6px; }
+.nc-stage { display: flex; align-items: center; gap: 8px; }
+.nc-nav {
+  flex: none; width: 30px; height: 30px; border-radius: 50%;
+  border: 1px solid var(--border); background: var(--bg-card); color: var(--text);
+  font-size: 18px; line-height: 1; cursor: pointer;
+}
+.nc-nav:disabled { opacity: .3; cursor: default; }
+.nc-viewport { flex: 1; overflow: hidden; }
+.nc-track { display: flex; transition: transform .28s ease; }
+.nc-card {
+  flex: 0 0 100%; box-sizing: border-box;
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-left: 4px solid var(--accent); border-radius: var(--radius-lg);
+  padding: 14px 16px; display: flex; flex-direction: column; gap: 8px;
+}
+.nc-card.t-overdue { border-left-color: #dc2626; }
+.nc-card.t-d0      { border-left-color: #f59e0b; }
+.nc-type { font-size: 11px; font-weight: 700; letter-spacing: .3px; color: var(--accent); }
+.nc-card.t-overdue .nc-type { color: #dc2626; }
+.nc-card.t-d0 .nc-type      { color: #f59e0b; }
+.nc-proj {
+  font-size: 15px; font-weight: 700; color: var(--text); cursor: pointer;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.nc-proj:hover { text-decoration: underline; }
+.nc-proc { font-size: 13px; color: var(--text-sec); }
+.nc-meta { font-size: 11px; color: var(--text-muted); }
+.nc-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
+.nc-actions button { font-size: 12px; padding: 5px 12px; }
+.nc-dots { display: flex; justify-content: center; gap: 5px; flex-wrap: wrap; }
+.nc-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--border); cursor: pointer; }
+.nc-dot.on { background: var(--accent); }
+.nc-footer { display: flex; justify-content: flex-end; }
+.nc-footer button { font-size: 11px; padding: 4px 10px; }
+.notif-mute-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.notif-mute-row button { flex: none; font-size: 10px; padding: 3px 8px; }

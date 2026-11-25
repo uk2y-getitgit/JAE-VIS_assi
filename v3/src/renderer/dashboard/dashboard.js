@@ -1564,9 +1564,17 @@ function calcBarPct(startStr, endStr, firstDay) {
   return { left: left + '%', width: width + '%' };
 }
 
+// 계획일보다 일찍 실시해 완료한 공정은 계획 바를 숨긴다 (끝난 일의 계획이 앞으로 남아 보이면 혼동)
+function hidePlanBar(proc) {
+  if (proc.status !== '완료') return false;
+  const actual = proc.actual_start || proc.actual_end;
+  const plan   = proc.plan_start   || proc.plan_end;
+  return !!(actual && plan && actual < plan);
+}
+
 // 공정이 3주 윈도우 내에 표시할 바(계획 or 실시)가 있는지 여부
 function hasBarInWindow(proc, firstDay) {
-  const planVis = calcBarPct(proc.plan_start, proc.plan_end, firstDay) !== null;
+  const planVis = !hidePlanBar(proc) && calcBarPct(proc.plan_start, proc.plan_end, firstDay) !== null;
   const actualEnd = proc.actual_end || (proc.actual_start ? fmtISO(new Date()) : null);
   const actualVis = calcBarPct(proc.actual_start, actualEnd, firstDay) !== null;
   return planVis || actualVis;
@@ -1614,7 +1622,7 @@ function buildProcRow(proc, weeks, firstDay, todayISO, projId) {
   const barWrap = document.createElement('div');
   barWrap.className = 'sched-bar-wrap';
 
-  if (proc.plan_start || proc.plan_end) {
+  if ((proc.plan_start || proc.plan_end) && !hidePlanBar(proc)) {
     const s = calcBarPct(proc.plan_start, proc.plan_end, firstDay);
     if (s) {
       const b = document.createElement('div');
@@ -3506,25 +3514,30 @@ document.getElementById('btnClearCompleted')?.addEventListener('click', () => {
   const dropdown = document.getElementById('notifDropdown');
   const overlay  = document.getElementById('notifOverlay');
   const list     = document.getElementById('notifList');
+  let listMode   = 'notifs';   // 'notifs' | 'mutes'
 
   function typeLabel(type) {
-    return { overdue:'지연', d0:'오늘마감', d1:'D-1', d3:'D-3' }[type] || type;
+    if (type === 'overdue') return '지연';
+    if (type === 'd0') return '오늘 마감';
+    const m = /^d(\d+)$/.exec(type || '');
+    return m ? `D-${m[1]}` : type;
   }
   function timeFmt(iso) {
     const d = new Date(iso);
     return d.toLocaleString('ko-KR', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' });
   }
-
+  function setBadge(count) {
+    badge.textContent = count > 9 ? '9+' : count;
+    badge.style.display = count > 0 ? '' : 'none';
+  }
   async function refreshBadge() {
-    try {
-      const count = await window.api.getNotifUnread();
-      badge.textContent = count > 9 ? '9+' : count;
-      badge.style.display = count > 0 ? '' : 'none';
-    } catch(e) {}
+    try { setBadge(await window.api.getNotifUnread()); } catch(e) {}
   }
 
+  // ── 벨 드롭다운 ───────────────────────────────────────────
   async function renderNotifList() {
     try {
+      if (listMode === 'mutes') return renderMuteList();
       const notifs = await window.api.getNotifications();
       if (!notifs.length) {
         list.innerHTML = '<div class="notif-empty">새 알림이 없습니다.</div>';
@@ -3545,7 +3558,40 @@ document.getElementById('btnClearCompleted')?.addEventListener('click', () => {
     } catch(e) {}
   }
 
-  function openDropdown()  { dropdown.style.display = ''; overlay.style.display = ''; renderNotifList(); }
+  async function renderMuteList() {
+    const mutes = await window.api.getNotifMutes();
+    if (!mutes.length) {
+      list.innerHTML = '<div class="notif-empty">알림을 끈 공정이 없습니다.</div>';
+      return;
+    }
+    list.innerHTML = mutes.map(m => `
+      <div class="notif-item notif-mute-row">
+        <div>
+          <div class="notif-item-title">🔕 ${escapeHtml(m.project_name)}</div>
+          <div class="notif-item-body">${escapeHtml(m.process_name)}</div>
+        </div>
+        <button class="btn-secondary" data-unmute="${escapeHtml(m.process_id)}">다시 알림</button>
+      </div>`).join('');
+    list.querySelectorAll('[data-unmute]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        await window.api.unmuteNotif(btn.dataset.unmute);
+        showToast('다음 알림 체크부터 다시 알립니다.');
+        renderMuteList();
+      });
+    });
+  }
+
+  const muteBtn = document.getElementById('btnNotifMutes');
+  function setListMode(mode) {
+    listMode = mode;
+    muteBtn.textContent = mode === 'mutes' ? '🔔 알림 목록' : '🔕 꺼둔 알림';
+  }
+  muteBtn.addEventListener('click', () => {
+    setListMode(listMode === 'mutes' ? 'notifs' : 'mutes');
+    renderNotifList();
+  });
+
+  function openDropdown()  { setListMode('notifs'); dropdown.style.display = ''; overlay.style.display = ''; renderNotifList(); }
   function closeDropdown() { dropdown.style.display = 'none'; overlay.style.display = 'none'; }
 
   bell.addEventListener('click', async () => {
@@ -3570,16 +3616,124 @@ document.getElementById('btnClearCompleted')?.addEventListener('click', () => {
     renderNotifList();
   });
 
-  // 메인 프로세스에서 새 알림 발생 시 뱃지 업데이트
-  if (window.api.onNotifUpdate) {
-    window.api.onNotifUpdate((count) => {
-      badge.textContent = count > 9 ? '9+' : count;
-      badge.style.display = count > 0 ? '' : 'none';
+  // ── 알림 카드 캐러셀 ──────────────────────────────────────
+  // 미확인 알림을 공정 단위로 한 장씩 보여준다 (같은 공정의 지연 알림은 날마다 쌓이므로 최신 1건만)
+  const ncTrack = document.getElementById('ncTrack');
+  const ncDots  = document.getElementById('ncDots');
+  let ncItems = [];
+  let ncIdx   = 0;
+
+  function ncOpen()  { return document.getElementById('notifCarousel').classList.contains('open'); }
+  function ncClose() { closeDialog('notifCarousel'); }
+
+  async function loadNcItems() {
+    const notifs = await window.api.getNotifications();   // 최신순
+    const seen = new Set();
+    const items = [];
+    notifs.filter(n => !n.is_read).forEach(n => {
+      const key = n.process_id || n.id;
+      if (seen.has(key)) return;
+      seen.add(key);
+      items.push(n);
     });
+    // 지연(오래된 순) → 오늘 마감 → D-N(가까운 순)
+    const rank = (n) => n.type === 'overdue' ? -100000 + (n.days_left || 0) : (n.days_left ?? 999);
+    return items.sort((a, b) => rank(a) - rank(b));
   }
 
-  // 초기 로드
-  refreshBadge();
+  function renderCarousel() {
+    if (!ncItems.length) { ncClose(); return; }
+    ncIdx = Math.min(Math.max(ncIdx, 0), ncItems.length - 1);
+    ncTrack.innerHTML = ncItems.map((n, i) => {
+      const extra = n.type === 'overdue' ? `${Math.abs(n.days_left || 0)}일 경과` : '';
+      return `
+        <div class="nc-card t-${n.type}">
+          <div class="nc-type">${typeLabel(n.type)}${extra ? ' · ' + extra : ''}</div>
+          <div class="nc-proj" data-proj="${escapeHtml(n.project_id)}" title="프로젝트 열기">${escapeHtml(n.project_name)}</div>
+          <div class="nc-proc">${escapeHtml(n.process_name)}</div>
+          <div class="nc-meta">계획 마감 ${n.plan_end || '-'} · 알림 ${timeFmt(n.created_at)}</div>
+          <div class="nc-actions">
+            <button class="btn-secondary" data-mute="${i}" title="이 공정은 다음부터 알리지 않습니다">🔕 알림끄기</button>
+            <button class="btn-primary" data-ack="${i}">확인</button>
+          </div>
+        </div>`;
+    }).join('');
+    ncTrack.style.transform = `translateX(-${ncIdx * 100}%)`;
+    ncDots.innerHTML = ncItems.length > 1
+      ? ncItems.map((_, i) => `<span class="nc-dot${i === ncIdx ? ' on' : ''}" data-dot="${i}"></span>`).join('')
+      : '';
+    document.getElementById('ncCounter').textContent = `${ncIdx + 1} / ${ncItems.length}`;
+    document.getElementById('btnNcPrev').disabled = ncIdx === 0;
+    document.getElementById('btnNcNext').disabled = ncIdx >= ncItems.length - 1;
+
+    ncTrack.querySelectorAll('[data-ack]').forEach(b => b.addEventListener('click', async () => {
+      const i = +b.dataset.ack;
+      setBadge(await window.api.ackNotif(ncItems[i].process_id));
+      dropAt(i);
+    }));
+    ncTrack.querySelectorAll('[data-mute]').forEach(b => b.addEventListener('click', async () => {
+      const i = +b.dataset.mute;
+      const n = ncItems[i];
+      setBadge(await window.api.muteNotif({
+        process_id: n.process_id, project_id: n.project_id,
+        project_name: n.project_name, process_name: n.process_name,
+      }));
+      showToast('이 공정은 다음부터 알리지 않습니다. (🔔 → 꺼둔 알림에서 해제)');
+      dropAt(i);
+    }));
+    ncTrack.querySelectorAll('[data-proj]').forEach(el => el.addEventListener('click', () => {
+      ncClose();
+      openProjectModal(el.dataset.proj);
+    }));
+    ncDots.querySelectorAll('[data-dot]').forEach(d => d.addEventListener('click', () => {
+      ncIdx = +d.dataset.dot; renderCarousel();
+    }));
+  }
+
+  function dropAt(i) {
+    ncItems.splice(i, 1);
+    if (ncIdx >= ncItems.length) ncIdx = ncItems.length - 1;
+    renderCarousel();
+  }
+
+  async function showNotifCarousel() {
+    try {
+      const keep = ncOpen() ? ncItems[ncIdx]?.process_id : null;
+      ncItems = await loadNcItems();
+      if (!ncItems.length) { ncClose(); return; }
+      const at = keep ? ncItems.findIndex(n => n.process_id === keep) : -1;
+      ncIdx = at >= 0 ? at : 0;
+      renderCarousel();
+      if (!ncOpen()) openDialog('notifCarousel');
+    } catch(e) { console.error('[notif] carousel', e); }
+  }
+
+  document.getElementById('btnNcPrev').addEventListener('click', () => { ncIdx--; renderCarousel(); });
+  document.getElementById('btnNcNext').addEventListener('click', () => { ncIdx++; renderCarousel(); });
+  document.getElementById('btnNcClose').addEventListener('click', ncClose);
+  document.getElementById('btnNcAckAll').addEventListener('click', async () => {
+    await window.api.markNotifsRead();
+    refreshBadge();
+    ncItems = [];
+    ncClose();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (!ncOpen()) return;
+    if (e.key === 'ArrowLeft'  && ncIdx > 0)                  { ncIdx--; renderCarousel(); }
+    if (e.key === 'ArrowRight' && ncIdx < ncItems.length - 1) { ncIdx++; renderCarousel(); }
+    if (e.key === 'Escape') ncClose();
+  });
+
+  // 메인 프로세스에서 뱃지 갱신 신호
+  if (window.api.onNotifUpdate) window.api.onNotifUpdate(setBadge);
+  // 주기 체크(30분)에서 새 알림이 생기면 Windows 토스트 대신 앱 안에서 카드로 띄운다
+  if (window.api.onNotifNew) window.api.onNotifNew(() => showNotifCarousel());
+
+  // 앱 시작 시: 즉시 알림 체크 → 미확인 알림을 먼저 카드로 보여준다
+  (async () => {
+    try { setBadge(await window.api.checkNotifications()); } catch(e) { refreshBadge(); }
+    showNotifCarousel();
+  })();
 })();
 
 // ═══════════════════════════════════════════════════════════

@@ -1,12 +1,11 @@
 /**
  * notifier.js — JAE-VIS Phase C 알림 시스템
  * - D-N 마감 알림 / 지연 알림
- * - Windows 토스트 (Electron Notification API)
- * - 앱 내 알림 센터 (bell icon badge)
+ * - 앱 내 알림 카드(캐러셀) + 알림 센터 (bell icon badge) — Windows 토스트는 쓰지 않는다
+ * - 공정 단위 알림끄기(notifMutes)
  * - 30분 주기 자동 체크
  */
 
-const { Notification } = require('electron');
 const db = require('./db');
 
 const INTERVAL_MS = 30 * 60 * 1000; // 30분
@@ -68,7 +67,7 @@ function checkAll(username) {
 
   projects.filter(proj => !isDoneProject(proj)).forEach(proj => {
     db.processes.getByProject(proj.id)
-      .filter(p => !p.is_group && p.plan_end && p.status !== '완료')
+      .filter(p => !p.is_group && p.plan_end && p.status !== '완료' && !db.notifMutes.has(p.id))
       .forEach(proc => {
         const endDate  = new Date(proc.plan_end);
         const daysLeft = Math.round((endDate - todayMidnight) / 86400000);
@@ -103,20 +102,6 @@ function checkAll(username) {
           body  = `${procDisplayName}  마감 ${proc.plan_end}`;
         }
 
-        // Windows 토스트 알림
-        if (Notification.isSupported()) {
-          try {
-            const notif = new Notification({ title, body, urgency: 'normal' });
-            notif.on('click', () => {
-              if (_dashWin) {
-                _dashWin.show();
-                _dashWin.webContents.send('navigate', 'schedule');
-              }
-            });
-            notif.show();
-          } catch (e) { console.error('[Notifier] toast 오류:', e.message); }
-        }
-
         // 앱 내 알림 저장 (process_name에 부모 포함)
         const saved = db.notifications.add({
           id:           `notif_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
@@ -134,8 +119,11 @@ function checkAll(username) {
       });
   });
 
-  // 대시보드에 뱃지 업데이트 신호 전송
+  // 대시보드에 뱃지 업데이트 신호 전송 + 새 알림이 있으면 앱 안에서 카드로 띄운다
   sendBadge();
+  if (newNotifs.length && _dashWin) {
+    try { _dashWin.webContents.send('notif-new', newNotifs.length); } catch (e) {}
+  }
 }
 
 function start(username, dashWin) {

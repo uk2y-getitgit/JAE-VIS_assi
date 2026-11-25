@@ -931,6 +931,7 @@
   <div class="notif-dropdown-header">
     <span class="notif-dropdown-title">🔔 알림</span>
     <div style="display:flex;gap:6px">
+      <button class="btn-secondary" id="btnNotifMutes" style="font-size:10px;padding:3px 8px" title="알림끄기 한 공정 보기·해제">🔕 꺼둔 알림</button>
       <button class="btn-secondary" id="btnMarkAllRead" style="font-size:10px;padding:3px 8px">전체 읽음</button>
       <button class="btn-secondary" id="btnClearNotifs" style="font-size:10px;padding:3px 8px;color:var(--text-muted)">비우기</button>
     </div>
@@ -940,6 +941,25 @@
   </div>
 </div>
 <div class="notif-overlay" id="notifOverlay" style="display:none"></div>
+
+<!-- ── 앱 내 알림 카드 캐러셀 (앱 시작 시 / 새 알림 발생 시) ── -->
+<div class="dialog-overlay" id="notifCarousel">
+  <div class="nc-box">
+    <div class="nc-header">
+      <span class="nc-title">🔔 확인할 알림 <span class="nc-counter" id="ncCounter"></span></span>
+      <button class="tb-btn" id="btnNcClose" title="나중에 보기">✕</button>
+    </div>
+    <div class="nc-stage">
+      <button class="nc-nav" id="btnNcPrev" title="이전">‹</button>
+      <div class="nc-viewport"><div class="nc-track" id="ncTrack"></div></div>
+      <button class="nc-nav" id="btnNcNext" title="다음">›</button>
+    </div>
+    <div class="nc-dots" id="ncDots"></div>
+    <div class="nc-footer">
+      <button class="btn-secondary" id="btnNcAckAll">모두 확인</button>
+    </div>
+  </div>
+</div>
 
 <!-- ── 리포트 모달 (Phase E) ────────────────────────────── -->
 <div class="report-modal" id="reportModal" style="display:none">

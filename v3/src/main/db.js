@@ -571,12 +571,34 @@ const notifications = {
   markRead:     (id) => store.set('notifications',
     store.get('notifications', []).map(n => n.id === id ? { ...n, is_read: true } : n)),
   clear:        ()   => store.set('notifications', []),
+  // 같은 공정의 알림은 날마다 새로 쌓이므로 공정 단위로 확인·제거한다
+  markReadByProcess: (procId) => store.set('notifications',
+    store.get('notifications', []).map(n => n.process_id === procId ? { ...n, is_read: true } : n)),
+  removeByProcess: (procId) =>
+    store.set('notifications', store.get('notifications', []).filter(n => n.process_id !== procId)),
   removeByProjects: (ids) => {
     const set  = new Set(ids);
     const list = store.get('notifications', []);
     const kept = list.filter(n => !set.has(n.project_id));
     if (kept.length !== list.length) store.set('notifications', kept);
     return list.length - kept.length;
+  },
+};
+
+// ─── 알림 끄기(공정 단위) ─────────────────────────────────────
+// 사용자가 "알림끄기"한 공정은 notifier가 더 이상 알림을 만들지 않는다
+const notifMutes = {
+  getAll: () => Object.values(store.get('notifMutes', {})),
+  has:    (procId) => !!store.get('notifMutes', {})[procId],
+  add:    (entry) => {
+    const all = store.get('notifMutes', {});
+    all[entry.process_id] = { ...entry, muted_at: new Date().toISOString() };
+    store.set('notifMutes', all);
+  },
+  remove: (procId) => {
+    const all = store.get('notifMutes', {});
+    delete all[procId];
+    store.set('notifMutes', all);
   },
 };
 
@@ -598,4 +620,4 @@ const changeLogs = {
   clear: () => store.set('changeLogs', []),
 };
 
-module.exports = { initializeData, users, categories, projects, processes, memos, quickMemos, settings, notifLog, notifications, changeLogs };
+module.exports = { initializeData, users, categories, projects, processes, memos, quickMemos, settings, notifLog, notifications, notifMutes, changeLogs };

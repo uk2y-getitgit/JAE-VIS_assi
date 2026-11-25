@@ -96,6 +96,11 @@ contextBridge.exposeInMainWorld('api', {
   checkNotifications: ()   => ipcRenderer.invoke('check-notifications'),
   getNotifSettings:   ()   => ipcRenderer.invoke('get-notif-settings'),
   onNotifUpdate: (cb) => ipcRenderer.on('notif-update', (_, count) => cb(count)),
+  onNotifNew:    (cb) => ipcRenderer.on('notif-new', (_, count) => cb(count)),
+  ackNotif:       (procId) => ipcRenderer.invoke('ack-notif', procId),
+  muteNotif:      (n)      => ipcRenderer.invoke('mute-notif', n),
+  getNotifMutes:  ()       => ipcRenderer.invoke('get-notif-mutes'),
+  unmuteNotif:    (procId) => ipcRenderer.invoke('unmute-notif', procId),
 
   // ── Phase D: 변경 이력 ────────────────────────────────────
   getChangeLogs:        ()    => ipcRenderer.invoke('get-change-logs'),

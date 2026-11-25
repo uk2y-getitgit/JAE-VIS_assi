@@ -880,6 +880,18 @@ function setupIpcHandlers() {
   ipcMain.handle('get-notif-unread',    () => db.notifications.getUnread().length);
   ipcMain.handle('mark-notifs-read',    () => { db.notifications.markAllRead(); return true; });
   ipcMain.handle('clear-notifications', () => { db.notifications.clear(); return true; });
+  // 알림 카드 "확인" — 그 공정의 미확인 알림을 모두 읽음 처리
+  ipcMain.handle('ack-notif', (_, procId) => { db.notifications.markReadByProcess(procId); return db.notifications.getUnread().length; });
+  // 알림 카드 "알림끄기" — 그 공정은 다음부터 알리지 않고, 쌓인 알림도 걷어낸다
+  ipcMain.handle('mute-notif', (_, n) => {
+    if (!n || !n.process_id) return db.notifications.getUnread().length;
+    db.notifMutes.add({ process_id: n.process_id, project_id: n.project_id || null,
+      project_name: n.project_name || '', process_name: n.process_name || '' });
+    db.notifications.removeByProcess(n.process_id);
+    return db.notifications.getUnread().length;
+  });
+  ipcMain.handle('get-notif-mutes', () => db.notifMutes.getAll());
+  ipcMain.handle('unmute-notif',   (_, procId) => { db.notifMutes.remove(procId); return true; });
   ipcMain.handle('check-notifications', () => {
     const notifier = require('./notifier');
     notifier.checkAll(currentUsername);
